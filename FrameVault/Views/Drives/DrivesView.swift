@@ -270,8 +270,25 @@ struct DriveCard: View {
                             .font(.system(size: 11)).foregroundStyle(.tertiary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        StatusBadge(label: drive.isOnline ? "Online" : "Offline", color: drive.isOnline ? .green : .secondary)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        HStack(spacing: 6) {
+                            if drive.isOnline {
+                                Button { onReindex() } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.system(size: 10, weight: .medium))
+                                        Text("Re-index")
+                                            .font(.system(size: 11))
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.purple.opacity(0.12))
+                                    .foregroundStyle(.purple)
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            StatusBadge(label: drive.isOnline ? "Online" : "Offline", color: drive.isOnline ? .green : .secondary)
+                        }
                         if drive.isOnline, let u = drive.usedBytes, let t = drive.totalBytes,
                            t > 0, Double(u) / Double(t) >= 0.90 {
                             StatusBadge(label: "Nearly full", color: .orange)

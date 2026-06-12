@@ -6,6 +6,7 @@ struct LibraryView: View {
     @State private var expandedShootID: Int64? = nil
     @State private var sortOrder = SortOrder.dateDesc
     @State private var driveFilter: String? = nil
+    @State private var selectedShoot: Shoot? = nil
 
     enum SortOrder: String, CaseIterable {
         case dateDesc  = "Newest first"
@@ -16,13 +17,23 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            libraryTable
+        Group {
+            if let shoot = selectedShoot {
+                ShootDetailView(
+                    shoot: shoot,
+                    drive: driveMap[shoot.driveID],
+                    onBack: { selectedShoot = nil }
+                )
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    Divider()
+                    libraryTable
+                }
+                .searchable(text: $searchText, prompt: "Search folders or drives…")
+            }
         }
-        .navigationTitle("Library")
-        .searchable(text: $searchText, prompt: "Search folders or drives…")
+        .navigationTitle(selectedShoot?.displayName ?? "Library")
     }
 
     // MARK: Toolbar — Windows style: bold count left, drive filter + sort right
@@ -382,5 +393,73 @@ struct ExpandableFolderRow: View {
         case 2: return .blue
         default: return .gray.opacity(0.6)
         }
+    }
+}
+
+// MARK: - Shoot Detail View
+
+struct ShootDetailView: View {
+    @EnvironmentObject var store: AppStore
+    let shoot: Shoot
+    let drive: Drive?
+    let onBack: () -> Void
+
+    private var folders: [DriveFolder] { store.folders(for: shoot) }
+    private var rootFolders: [DriveFolder] { folders.filter { $0.depth == 0 }.sorted { $0.sizeBytes > $1.sizeBytes } }
+    private var totalFileCount: Int64 { rootFolders.reduce(0) { $0 + $1.fileCount } }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Button { onBack() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").font(.system(size: 12, weight: .medium))
+                        Text("Back").font(.system(size: 13))
+                    }
+                    .foregroundStyle(.purple)
+                }
+                .buttonStyle(.plain)
+
+                Text(shoot.displayName).font(.system(size: 22, weight: .semibold))
+
+                HStack(spacing: 12) {
+                    detailStatCard("Total Size",  value: shoot.formattedSize)
+                    detailStatCard("Total Files", value: totalFileCount > 0 ? "\(totalFileCount) files" : "—")
+                    detailStatCard("Drive",       value: drive?.name ?? "—")
+                    detailStatCard("Created",     value: shoot.createdAt.formatted(date: .long, time: .omitted))
+                }
+
+                VStack(spacing: 0) {
+                    ForEach(rootFolders) { folder in
+                        ExpandableFolderRow(folder: folder, allFolders: folders, shootTotalBytes: shoot.totalBytes)
+                        if folder.id != rootFolders.last?.id { Divider().padding(.leading, 16) }
+                    }
+                    if rootFolders.isEmpty {
+                        Text("No subfolders found").font(.callout).foregroundStyle(.tertiary).padding(20).frame(maxWidth: .infinity)
+                    }
+                }
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator, lineWidth: 0.5))
+
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.icloud").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    Text("Auto-scanned · available offline").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            .padding(20)
+        }
+        .background(Color(.windowBackgroundColor))
+    }
+
+    private func detailStatCard(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14).background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator, lineWidth: 0.5))
     }
 }
