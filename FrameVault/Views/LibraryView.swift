@@ -307,10 +307,18 @@ struct ExpandableFolderRow: View {
                     .font(.system(size: 13))
                     .foregroundStyle(folderColor)
 
-                Text(folder.name)
-                    .font(.system(size: 13 - CGFloat(min(folder.depth, 1))))
-                    .lineLimit(1)
-                    .foregroundStyle(folder.depth == 0 ? .primary : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(folder.name)
+                        .font(.system(size: 13 - CGFloat(min(folder.depth, 1))))
+                        .lineLimit(1)
+                        .foregroundStyle(folder.depth == 0 ? .primary : .secondary)
+                    if let types = folder.fileTypes, !types.isEmpty, folder.depth == 0 {
+                        Text(types)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 Spacer()
 
