@@ -133,7 +133,7 @@ final class AppStore: ObservableObject {
     }
 
     private func setupDrivePolling() {
-        Timer.publish(every: 30.0, on: .main, in: .common)
+        Timer.publish(every: 10.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in Task { @MainActor in self?.checkDriveChanges() } }
             .store(in: &cancellables)

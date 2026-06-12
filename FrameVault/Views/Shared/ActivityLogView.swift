@@ -243,6 +243,16 @@ struct ActivityLogView: View {
             }
         }
         .navigationTitle("Activity Log")
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    store.reload()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh activity log")
+            }
+        }
         .fileExporter(
             isPresented: $showCSVExporter,
             document: exportCSV,

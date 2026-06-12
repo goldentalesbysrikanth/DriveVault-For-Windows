@@ -6,7 +6,7 @@ final class TrialManager {
     static let shared = TrialManager()
 
     private let firstLaunchKey = "fv.firstLaunchDate"
-    private let trialDays = 10
+    private let trialDays = 14
 
     var isTrialExpired: Bool {
         let daysSince = daysSinceFirstLaunch

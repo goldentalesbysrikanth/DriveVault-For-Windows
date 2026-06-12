@@ -524,6 +524,13 @@ final class DatabaseManager {
                 self.colAppEventDetail <- detail,
                 self.colAppEventAt     <- Date()
             ))
+            // Also write to activity_log so it appears in ActivityLogView
+            try? self.activityDB.run(self.activityTable.insert(
+                self.colActivityKind  <- kind.rawValue,
+                self.colActivityTitle <- kind.label,
+                self.colActivitySub   <- detail,
+                self.colActivityAt    <- Date()
+            ))
         }
     }
 

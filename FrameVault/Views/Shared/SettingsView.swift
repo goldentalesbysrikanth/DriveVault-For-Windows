@@ -70,7 +70,7 @@ struct SettingsView: View {
                 settingsGroup("Startup") {
                     settingsRow {
                         Toggle("Launch Drive Vault when Mac starts", isOn: $launchAtLogin)
-                            .onChange(of: launchAtLogin) { _, val in LaunchAtLoginManager.shared.isEnabled = val }
+                            .onChange(of: launchAtLogin) { _, val in LaunchAtLoginManager.shared.isEnabled = val; store.logAppEvent(.settingsChanged, detail: "Launch at login: \(val ? "enabled" : "disabled")") }
                         Text("Drive Vault will start automatically in the background when you log in.")
                             .font(.caption).foregroundStyle(.secondary).padding(.top, 2)
                     }
@@ -105,7 +105,7 @@ struct SettingsView: View {
                                 Text("\(Int(alertThresholdPct))%").foregroundStyle(.secondary).monospacedDigit()
                             }
                             Slider(value: $alertThresholdPct, in: 70...99, step: 5).tint(.purple)
-                                .onChange(of: alertThresholdPct) { _, _ in store.reload() }
+                                .onChange(of: alertThresholdPct) { _, val in store.reload(); store.logAppEvent(.settingsChanged, detail: "Alert threshold: \(Int(val))%") }
                         }
                     }
                     settingsRow {
@@ -116,7 +116,7 @@ struct SettingsView: View {
                                 Text("\(Int(alertDaysUnseen)) day\(alertDaysUnseen != 1 ? "s" : "")").foregroundStyle(.secondary).monospacedDigit()
                             }
                             Slider(value: $alertDaysUnseen, in: 1...30, step: 1).tint(.purple)
-                                .onChange(of: alertDaysUnseen) { _, _ in store.reload() }
+                                .onChange(of: alertDaysUnseen) { _, val in store.reload(); store.logAppEvent(.settingsChanged, detail: "Alert days unseen: \(Int(val)) days") }
                         }
                     }
                 }
