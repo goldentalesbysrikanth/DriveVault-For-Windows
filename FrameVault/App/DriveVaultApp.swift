@@ -132,7 +132,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     private func existingMainWindow() -> NSWindow? {
-        NSApp.windows.first { $0.identifier?.rawValue == "main" && $0.canBecomeKey }
+        // Check all visible windows — identifier may not be set on first launch
+        NSApp.windows.first {
+            ($0.identifier?.rawValue == "main" || $0.title == "Drive Vault")
+            && $0.canBecomeKey
+        }
     }
 
     private func attachDelegate(to window: NSWindow) {
