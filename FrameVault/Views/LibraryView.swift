@@ -67,7 +67,8 @@ struct LibraryView: View {
                             drive: driveMap[shoot.driveID],
                             folders: store.folders(for: shoot),
                             isExpanded: expandedShootID == shoot.id,
-                            onToggle: {
+                            onTap: { selectedShoot = shoot },
+                            onExpand: {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     expandedShootID = expandedShootID == shoot.id ? nil : shoot.id
                                 }
@@ -142,7 +143,8 @@ struct LibraryTableRow: View {
     let drive: Drive?
     let folders: [DriveFolder]
     let isExpanded: Bool
-    let onToggle: () -> Void
+    let onTap: () -> Void
+    let onExpand: () -> Void
 
     private var totalFileCount: Int64 {
         folders.filter { $0.depth == 0 }.reduce(0) { $0 + $1.fileCount }
@@ -150,7 +152,7 @@ struct LibraryTableRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: onToggle) {
+            Button(action: onTap) {
                 HStack {
                     HStack(spacing: 8) {
                         ZStack {
@@ -195,12 +197,17 @@ struct LibraryTableRow: View {
                         .foregroundStyle(.tertiary)
                         .frame(width: 100, alignment: .trailing)
 
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
-                        .frame(width: 20)
+                    // Chevron — only this triggers expand/collapse
+                    Button(action: onExpand) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
