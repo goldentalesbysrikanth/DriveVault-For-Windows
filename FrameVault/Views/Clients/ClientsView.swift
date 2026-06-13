@@ -108,6 +108,13 @@ struct ClientsView: View {
             }
         }
         .navigationTitle("Clients")
+        .onReceive(store.$searchNavigationClientKey) { key in
+            guard let key else { return }
+            if let group = store.clientGroups.first(where: { $0.key == key }) {
+                selectedGroup = group
+                store.searchNavigationClientKey = nil
+            }
+        }
         .overlay {
             if filteredGroups.isEmpty {
                 ContentUnavailableView(

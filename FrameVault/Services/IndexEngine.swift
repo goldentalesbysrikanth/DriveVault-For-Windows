@@ -481,7 +481,7 @@ final class DriveWatcher {
                 self?.maxTimer = nil
                 self?.onChange()
             }
-            // Max timer — fires after 30s regardless of ongoing changes
+            // Max timer — fires after 30s regardless of ongoing file copies
             if self.maxTimer == nil {
                 self.maxTimer = Timer.scheduledTimer(
                     withTimeInterval: 30.0, repeats: false

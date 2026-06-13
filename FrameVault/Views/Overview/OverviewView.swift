@@ -383,9 +383,47 @@ struct OverviewView: View {
                                     shoot: shoot,
                                     drive: driveMap[shoot.driveID],
                                     onTap: {
+                                        store.searchNavigationShootID = shoot.id
                                         selection = .library
                                     }
                                 )
+                                Divider()
+                            }
+                        }
+
+                        // Clients section
+                        let clientResults = store.clientGroups.filter {
+                            $0.displayName.lowercased().contains(q)
+                        }
+                        if !clientResults.isEmpty {
+                            Text("CLIENTS")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .tracking(0.5)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                            ForEach(clientResults) { group in
+                                Button {
+                                    store.searchNavigationClientKey = group.key
+                                    selection = .clients
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            Circle().fill(.purple.opacity(0.1)).frame(width: 28, height: 28)
+                                            Text(group.initials).font(.system(size: 11, weight: .medium)).foregroundStyle(.purple)
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(group.displayName).font(.system(size: 13, weight: .medium))
+                                            Text("Client · \(group.shoots.count) shoots · \(group.formattedTotalSize)")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 10).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                                 Divider()
                             }
                         }

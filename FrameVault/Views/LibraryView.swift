@@ -34,6 +34,13 @@ struct LibraryView: View {
             }
         }
         .navigationTitle(selectedShoot?.displayName ?? "Library")
+        .onReceive(store.$searchNavigationShootID) { id in
+            guard let id else { return }
+            if let shoot = store.shoots.first(where: { $0.id == id }) {
+                selectedShoot = shoot
+                store.searchNavigationShootID = nil
+            }
+        }
     }
 
     // MARK: Toolbar — Windows style: bold count left, drive filter + sort right

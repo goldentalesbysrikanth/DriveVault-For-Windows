@@ -56,6 +56,8 @@ final class AppStore: ObservableObject {
     var appInstallDate: Date? { db.appInstallDate() }
     @Published var showIndexPrompt: Bool = false
     @Published var pendingIndexURL: URL? = nil
+    @Published var searchNavigationShootID: Int64? = nil
+    @Published var searchNavigationClientKey: String? = nil
 
     @AppStorage("fv.autoIndexOnConnect") var autoIndexEnabled = true
 
