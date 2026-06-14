@@ -10,9 +10,7 @@ struct ClientsView: View {
     enum ClientSort: String, CaseIterable {
         case nameAsc  = "A–Z"
         case nameDesc = "Z–A"
-        case sizeDesc = "Largest first"
-        case shoots   = "Most shoots"
-        case drive    = "By drive (A–Z)"
+        case drive    = "By Drive"
     }
 
     // MARK: - Computed
@@ -29,8 +27,6 @@ struct ClientsView: View {
         switch sortOrder {
         case .nameAsc:  return store.clientGroups.sorted { $0.displayName < $1.displayName }
         case .nameDesc: return store.clientGroups.sorted { $0.displayName > $1.displayName }
-        case .sizeDesc: return store.clientGroups.sorted { $0.totalBytes > $1.totalBytes }
-        case .shoots:   return store.clientGroups.sorted { $0.shoots.count > $1.shoots.count }
         case .drive:    return store.clientGroups.sorted { ($0.uniqueDriveIDs.first ?? "") < ($1.uniqueDriveIDs.first ?? "") }
         }
     }
@@ -52,21 +48,33 @@ struct ClientsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // ── Tab switcher ──────────────────────────────────────────
+            // ── Tab switcher — refined underline style ────────────────
             HStack(spacing: 0) {
                 ForEach(["Clients", "Workflow"], id: \.self) { tab in
+                    let isActive = activeTab == tab
                     Button { activeTab = tab } label: {
-                        Text(tab)
-                            .font(.system(size: 13, weight: activeTab == tab ? .semibold : .regular))
-                            .padding(.horizontal, 16).padding(.vertical, 8)
-                            .background(activeTab == tab ? Color.purple.opacity(0.1) : Color.clear)
-                            .foregroundStyle(activeTab == tab ? .purple : .secondary)
+                        VStack(spacing: 0) {
+                            Text(tab)
+                                .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                                .foregroundStyle(isActive ? Color(red: 0.32, green: 0.22, blue: 0.62) : .secondary)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                            Rectangle()
+                                .fill(isActive ? Color(red: 0.32, green: 0.22, blue: 0.62) : Color.clear)
+                                .frame(height: 2)
+                        }
                     }
                     .buttonStyle(.plain)
                 }
+                Spacer()
             }
-            .padding(.horizontal, 16).padding(.top, 12)
+            .background(.background)
 
-            // ── Search + Sort ─────────────────────────────────────────
+            if activeTab == "Workflow" {
+                WorkflowView()
+            } else {
+
+            // ── Search + Sort (Clients tab only) ──────────────────────
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
@@ -86,14 +94,10 @@ struct ClientsView: View {
                 Picker("Sort", selection: $sortOrder) {
                     ForEach(ClientSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 140)
+                .labelsHidden().pickerStyle(.menu).frame(width: 110)
             }
             .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
             .background(.background)
-
-            if activeTab == "Workflow" {
-                WorkflowView()
-            } else {
 
             // ── Header cards ─────────────────────────────────────────
             HStack(spacing: 12) {
@@ -340,8 +344,13 @@ struct ClientDetailSheet: View {
                     }
                 }
             }
+            Divider().padding(.horizontal, 16)
+            WorkflowSummarySection(group: group)
+                .environmentObject(store)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
         }
-        .frame(width: 600, height: 520)
+        .frame(width: 600, height: 640)
     }
 
     private func sheetStatCard(_ label: String, value: String) -> some View {

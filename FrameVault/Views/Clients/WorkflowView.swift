@@ -3,8 +3,7 @@ import SwiftUI
 // MARK: - Premium Color Constants
 
 private extension Color {
-    // Deep indigo — the single premium accent, not system purple
-    static let accent = Color(red: 0.32, green: 0.22, blue: 0.62)
+    static let accent      = Color(red: 0.32, green: 0.22, blue: 0.62)
     static let accentLight = Color(red: 0.32, green: 0.22, blue: 0.62).opacity(0.10)
     static let accentMid   = Color(red: 0.32, green: 0.22, blue: 0.62).opacity(0.18)
 
@@ -13,6 +12,18 @@ private extension Color {
     static let statusAmber  = Color(red: 0.75, green: 0.52, blue: 0.18)
     static let statusBlue   = Color(red: 0.22, green: 0.42, blue: 0.72)
     static let statusGray   = Color(red: 0.52, green: 0.52, blue: 0.55)
+}
+
+// MARK: - Progress color helper (luxury gradient)
+
+private func progressColor(_ percent: Double) -> Color {
+    switch percent {
+    case 0..<25:   return Color(red: 0.72, green: 0.12, blue: 0.12) // deep crimson
+    case 25..<50:  return Color(red: 0.78, green: 0.38, blue: 0.08) // burnt orange
+    case 50..<70:  return Color(red: 0.70, green: 0.58, blue: 0.08) // dark amber/gold
+    case 70..<90:  return Color(red: 0.28, green: 0.62, blue: 0.30) // muted green
+    default:       return Color(red: 0.12, green: 0.52, blue: 0.28) // deep emerald
+    }
 }
 
 // MARK: - WorkflowView (tab inside ClientsView)
@@ -27,8 +38,8 @@ struct WorkflowView: View {
     private var filteredGroups: [ClientGroup] {
         let groups = store.clientGroups
         switch filterStatus {
-        case "Attached":   return groups.filter { store.workflow(for: $0) != nil }
-        case "Pending":    return groups.filter { store.workflow(for: $0) == nil }
+        case "Attached":    return groups.filter { store.workflow(for: $0) != nil }
+        case "Pending":     return groups.filter { store.workflow(for: $0) == nil }
         case "In Progress":
             return groups.filter {
                 if let wf = store.workflow(for: $0) {
@@ -37,21 +48,17 @@ struct WorkflowView: View {
                 return false
             }
         case "Completed":
-            return groups.filter {
-                store.workflow(for: $0)?.progressPercent ?? 0 >= 100
-            }
+            return groups.filter { store.workflow(for: $0)?.progressPercent ?? 0 >= 100 }
         default: return groups
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Filter pills
+            // Filter pills only — no sort in Workflow
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(filters, id: \.self) { f in
-                        filterPill(f)
-                    }
+                    ForEach(filters, id: \.self) { f in filterPill(f) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -114,9 +121,9 @@ struct WorkflowRowCard: View {
         let wf = store.workflow(for: group)
         let hasWF = wf != nil
         let progress = wf?.progressPercent ?? 0
+        let pColor = progressColor(progress)
 
         HStack(spacing: 14) {
-            // Avatar
             ZStack {
                 Circle()
                     .fill(avatarColor(for: group.displayName).opacity(0.12))
@@ -136,21 +143,20 @@ struct WorkflowRowCard: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
-                    // Status chips — muted dots only
                     HStack(spacing: 10) {
                         statusChip("Photos", wf.editedPhotosStatus)
-                        statusChip("Video", wf.cinematicVideoStatus)
-                        statusChip("Album", wf.albumDesigningStatus)
+                        statusChip("Video",  wf.cinematicVideoStatus)
+                        statusChip("Album",  wf.albumDesigningStatus)
                     }
 
-                    // Progress bar — thin, elegant
+                    // Progress bar — luxury gradient color
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color(.systemGray).opacity(0.12))
                                 .frame(height: 3)
                             RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.accent)
+                                .fill(pColor)
                                 .frame(width: geo.size.width * CGFloat(progress / 100), height: 3)
                         }
                     }
@@ -171,8 +177,8 @@ struct WorkflowRowCard: View {
                         .font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.accentLight)
-                        .foregroundStyle(Color.accent)
+                        .background(pColor.opacity(0.12))
+                        .foregroundStyle(pColor)
                         .clipShape(Capsule())
                 } else {
                     Text("+ Workflow")
@@ -208,28 +214,160 @@ struct WorkflowRowCard: View {
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "Delivered", "Shared":       return .statusGreen
-        case "In Progress", "Pending":    return Color.accent
-        case "Started":                   return .statusBlue
-        case "On Hold":                   return .statusAmber
-        case "Not Started", "Not Shared": return .statusGray
-        default:                          return .statusGray.opacity(0.5)
+        case "Delivered", "Shared":              return .statusGreen
+        case "In Progress", "Pending":           return Color.accent
+        case "Awaiting Client's Response":       return .statusAmber
+        case "Started":                          return .statusBlue
+        case "On Hold":                          return Color(red: 0.65, green: 0.25, blue: 0.18)
+        case "Not Started", "Not Shared", "NA":  return .statusGray
+        default:                                 return .statusGray.opacity(0.5)
         }
     }
 
     private func avatarColor(for name: String) -> Color {
-        // Refined palette — muted, sophisticated
         let colors: [Color] = [
-            Color(red: 0.32, green: 0.22, blue: 0.62), // deep indigo
-            Color(red: 0.18, green: 0.38, blue: 0.65), // navy
-            Color(red: 0.15, green: 0.50, blue: 0.45), // teal
-            Color(red: 0.45, green: 0.28, blue: 0.58), // plum
-            Color(red: 0.62, green: 0.38, blue: 0.18), // amber
-            Color(red: 0.22, green: 0.45, blue: 0.38), // forest
-            Color(red: 0.52, green: 0.28, blue: 0.42), // mauve
-            Color(red: 0.28, green: 0.35, blue: 0.62), // cobalt
+            Color(red: 0.32, green: 0.22, blue: 0.62),
+            Color(red: 0.18, green: 0.38, blue: 0.65),
+            Color(red: 0.15, green: 0.50, blue: 0.45),
+            Color(red: 0.45, green: 0.28, blue: 0.58),
+            Color(red: 0.62, green: 0.38, blue: 0.18),
+            Color(red: 0.22, green: 0.45, blue: 0.38),
+            Color(red: 0.52, green: 0.28, blue: 0.42),
+            Color(red: 0.28, green: 0.35, blue: 0.62),
         ]
         return colors[abs(name.hashValue) % colors.count]
+    }
+}
+
+// MARK: - WorkflowSummarySection (embedded in client detail popup)
+
+struct WorkflowSummarySection: View {
+    @EnvironmentObject var store: AppStore
+    let group: ClientGroup
+    @State private var showEditor = false
+
+    var body: some View {
+        let wf = store.workflow(for: group)
+        let progress = wf?.progressPercent ?? 0
+        let pColor = progressColor(progress)
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Workflow")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accent)
+
+                Spacer()
+
+                if let wf {
+                    Text("\(wf.progressDisplay) complete")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background(pColor.opacity(0.12))
+                        .foregroundStyle(pColor)
+                        .clipShape(Capsule())
+                }
+
+                Button(wf != nil ? "Edit" : "+ Attach") {
+                    showEditor = true
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Color.accent)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Color.accentLight)
+                .clipShape(Capsule())
+                .buttonStyle(.plain)
+            }
+
+            if let wf {
+                // Progress bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color(.systemGray).opacity(0.12))
+                            .frame(height: 4)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(pColor)
+                            .frame(width: geo.size.width * CGFloat(progress / 100), height: 4)
+                    }
+                }
+                .frame(height: 4)
+
+                // Field rows
+                VStack(spacing: 8) {
+                    workflowRow("Selection Link",   wf.selectionLinkStatus)
+                    workflowRow("Client HDD Copy",  wf.clientHDDCopyStatus)
+                    workflowRow("Edited Photos",    wf.editedPhotosStatus)
+                    workflowRow("Cinematic Video",  wf.cinematicVideoStatus)
+                    workflowRow("Traditional Video",wf.traditionalVideoStatus)
+                    workflowRow("Album Designing",  wf.albumDesigningStatus)
+                    workflowRow("Project Status",   wf.completeProjectStatus)
+                }
+                .padding(.top, 2)
+
+                if !wf.notes.isEmpty {
+                    Text(wf.notes)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
+            } else {
+                Text("No workflow attached. Tap + Attach to start tracking delivery.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
+            }
+        }
+        .padding(14)
+        .background(Color(.systemGray).opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separatorColor), lineWidth: 0.5))
+        .sheet(isPresented: $showEditor) {
+            WorkflowEditorSheet(group: group)
+                .environmentObject(store)
+        }
+    }
+
+    private func workflowRow(_ label: String, _ status: String) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusDotColor(status))
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 140, alignment: .leading)
+            Text(status)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(statusTextColor(status))
+            Spacer()
+        }
+    }
+
+    private func statusDotColor(_ status: String) -> Color {
+        switch status {
+        case "Delivered", "Shared":              return .statusGreen
+        case "In Progress", "Pending":           return Color.accent
+        case "Awaiting Client's Response":       return .statusAmber
+        case "Started":                          return .statusBlue
+        case "On Hold":                          return Color(red: 0.65, green: 0.25, blue: 0.18)
+        case "Not Started", "Not Shared", "NA":  return .statusGray
+        default:                                 return .statusGray
+        }
+    }
+
+    private func statusTextColor(_ status: String) -> Color {
+        switch status {
+        case "Delivered", "Shared":              return .statusGreen
+        case "In Progress", "Pending":           return Color.accent
+        case "Awaiting Client's Response":       return .statusAmber
+        case "Started":                          return .statusBlue
+        case "On Hold":                          return Color(red: 0.65, green: 0.25, blue: 0.18)
+        case "NA":                               return .statusGray
+        default:                                 return .secondary
+        }
     }
 }
 
@@ -244,8 +382,11 @@ struct WorkflowEditorSheet: View {
     @State private var showDeleteConfirm = false
 
     private let groupAOptions = ["Not Shared", "Pending", "On Hold", "Shared"]
-    private let groupBOptions = ["NA", "Not Started", "Started", "In Progress", "On Hold", "Delivered"]
-    private let projectStatusOptions = ["NA", "Not Started", "Started", "In Progress", "On Hold", "Delivered"]
+    // Screenshot 3 shows: NA / Not Started / Started / In Progress / Awaiting Client's Response / On Hold / Delivered
+    private let groupBOptions = ["NA", "Not Started", "Started", "In Progress",
+                                 "Awaiting Client's Response", "On Hold", "Delivered"]
+    private let projectStatusOptions = ["NA", "Not Started", "Started", "In Progress",
+                                        "Awaiting Client's Response", "On Hold", "Delivered"]
 
     init(group: ClientGroup) {
         self.group = group
@@ -266,19 +407,20 @@ struct WorkflowEditorSheet: View {
 
                 Spacer()
 
-                // Progress ring — refined, thin
+                // Progress ring — luxury gradient color
+                let pColor = progressColor(wf.progressPercent)
                 ZStack {
                     Circle()
                         .stroke(Color(.systemGray).opacity(0.15), lineWidth: 3)
                         .frame(width: 42, height: 42)
                     Circle()
                         .trim(from: 0, to: CGFloat(wf.progressPercent / 100))
-                        .stroke(Color.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .stroke(pColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .frame(width: 42, height: 42)
                         .rotationEffect(.degrees(-90))
                     Text(wf.progressDisplay)
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.accent)
+                        .foregroundStyle(pColor)
                 }
 
                 Button("Done") { dismiss() }
@@ -301,17 +443,17 @@ struct WorkflowEditorSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
 
                     sectionBlock("DELIVERY") {
-                        segmentedField("Selection Link",   options: groupAOptions, binding: $wf.selectionLinkStatus)
-                        segmentedField("Client HDD Copy",  options: groupAOptions, binding: $wf.clientHDDCopyStatus)
+                        segmentedField("Selection Link",  options: groupAOptions, binding: $wf.selectionLinkStatus)
+                        segmentedField("Client HDD Copy", options: groupAOptions, binding: $wf.clientHDDCopyStatus)
                     }
 
                     Divider().padding(.vertical, 2)
 
                     sectionBlock("PRODUCTION") {
-                        segmentedField("Edited Photos",      options: groupBOptions, binding: $wf.editedPhotosStatus)
-                        segmentedField("Cinematic Video",    options: groupBOptions, binding: $wf.cinematicVideoStatus)
-                        segmentedField("Traditional Video",  options: groupBOptions, binding: $wf.traditionalVideoStatus)
-                        segmentedField("Album Designing",    options: groupBOptions, binding: $wf.albumDesigningStatus)
+                        segmentedField("Edited Photos",     options: groupBOptions, binding: $wf.editedPhotosStatus)
+                        segmentedField("Cinematic Video",   options: groupBOptions, binding: $wf.cinematicVideoStatus)
+                        segmentedField("Traditional Video", options: groupBOptions, binding: $wf.traditionalVideoStatus)
+                        segmentedField("Album Designing",   options: groupBOptions, binding: $wf.albumDesigningStatus)
                     }
 
                     Divider().padding(.vertical, 2)
@@ -345,7 +487,7 @@ struct WorkflowEditorSheet: View {
                             } label: {
                                 Text("Remove Workflow")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color(red: 0.75, green: 0.22, blue: 0.22))
+                                    .foregroundStyle(Color(red: 0.72, green: 0.18, blue: 0.18))
                             }
                             .buttonStyle(.plain)
                         }
@@ -371,7 +513,7 @@ struct WorkflowEditorSheet: View {
                 .padding(20)
             }
         }
-        .frame(width: 560, height: 620)
+        .frame(width: 560, height: 640)
         .onAppear {
             if let existing = store.workflow(for: group) {
                 wf = existing
@@ -493,7 +635,6 @@ struct WorkflowPromptSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header stripe
             VStack(spacing: 10) {
                 ZStack {
                     Circle()
