@@ -39,6 +39,20 @@ final class DatabaseManager {
     private let colFolderFileTypes = Expression<String?>("file_types")
 
     private let activityTable    = Table("activity_log")
+
+    // Workflow table
+    private let workflowTable         = Table("client_workflows")
+    private let colWFClientName       = Expression<String>("client_name")
+    private let colWFSelectionLink    = Expression<String>("selection_link_status")
+    private let colWFClientHDD        = Expression<String>("client_hdd_copy_status")
+    private let colWFEditedPhotos     = Expression<String>("edited_photos_status")
+    private let colWFCinematicVideo   = Expression<String>("cinematic_video_status")
+    private let colWFTraditionalVideo = Expression<String>("traditional_video_status")
+    private let colWFAlbumDesigning   = Expression<String>("album_designing_status")
+    private let colWFCompleteProject  = Expression<String>("complete_project_status")
+    private let colWFNotes            = Expression<String>("notes")
+    private let colWFStartDate        = Expression<Date>("project_start_date")
+    private let colWFUpdatedAt        = Expression<Date>("last_updated_at")
     private let colActivityID    = Expression<Int64>("id")
     private let colActivityKind  = Expression<String>("kind")
     private let colActivityTitle = Expression<String>("title")
@@ -155,6 +169,21 @@ final class DatabaseManager {
             t.column(colAppEventAt)
         })
         try activityDB.run(appEventsTable.createIndex(colAppEventAt, ifNotExists: true))
+
+        // Workflow table — stored in main DB
+        try db.run(workflowTable.create(ifNotExists: true) { t in
+            t.column(colWFClientName, primaryKey: true)
+            t.column(colWFSelectionLink, defaultValue: "Not Shared")
+            t.column(colWFClientHDD, defaultValue: "Not Shared")
+            t.column(colWFEditedPhotos, defaultValue: "NA")
+            t.column(colWFCinematicVideo, defaultValue: "NA")
+            t.column(colWFTraditionalVideo, defaultValue: "NA")
+            t.column(colWFAlbumDesigning, defaultValue: "NA")
+            t.column(colWFCompleteProject, defaultValue: "NA")
+            t.column(colWFNotes, defaultValue: "")
+            t.column(colWFStartDate)
+            t.column(colWFUpdatedAt)
+        })
     }
 
     // MARK: - DB Health Check
@@ -555,6 +584,60 @@ final class DatabaseManager {
         queue.async {
             try? self.activityDB.run(self.appEventsTable.delete())
         }
+    }
+
+    // MARK: - Workflow CRUD
+
+    func fetchWorkflow(for clientName: String) -> ClientWorkflow? {
+        let q = workflowTable.filter(colWFClientName == clientName).limit(1)
+        guard let row = try? db.pluck(q) else { return nil }
+        return rowToWorkflow(row)
+    }
+
+    func fetchAllWorkflows() -> [ClientWorkflow] {
+        (try? db.prepare(workflowTable).map { rowToWorkflow($0) }) ?? []
+    }
+
+    func saveWorkflow(_ wf: ClientWorkflow) {
+        queue.async {
+            try? self.db.run(self.workflowTable.insert(or: .replace,
+                self.colWFClientName       <- wf.clientName,
+                self.colWFSelectionLink    <- wf.selectionLinkStatus,
+                self.colWFClientHDD        <- wf.clientHDDCopyStatus,
+                self.colWFEditedPhotos     <- wf.editedPhotosStatus,
+                self.colWFCinematicVideo   <- wf.cinematicVideoStatus,
+                self.colWFTraditionalVideo <- wf.traditionalVideoStatus,
+                self.colWFAlbumDesigning   <- wf.albumDesigningStatus,
+                self.colWFCompleteProject  <- wf.completeProjectStatus,
+                self.colWFNotes            <- wf.notes,
+                self.colWFStartDate        <- wf.projectStartDate,
+                self.colWFUpdatedAt        <- Date()
+            ))
+        }
+    }
+
+    func deleteWorkflow(for clientName: String) {
+        queue.async {
+            try? self.db.run(
+                self.workflowTable.filter(self.colWFClientName == clientName).delete()
+            )
+        }
+    }
+
+    private func rowToWorkflow(_ row: Row) -> ClientWorkflow {
+        ClientWorkflow(
+            clientName:              row[colWFClientName],
+            selectionLinkStatus:     row[colWFSelectionLink],
+            clientHDDCopyStatus:     row[colWFClientHDD],
+            editedPhotosStatus:      row[colWFEditedPhotos],
+            cinematicVideoStatus:    row[colWFCinematicVideo],
+            traditionalVideoStatus:  row[colWFTraditionalVideo],
+            albumDesigningStatus:    row[colWFAlbumDesigning],
+            completeProjectStatus:   row[colWFCompleteProject],
+            notes:                   row[colWFNotes],
+            projectStartDate:        row[colWFStartDate],
+            lastUpdatedAt:           row[colWFUpdatedAt]
+        )
     }
 
     func appInstallDate() -> Date? {

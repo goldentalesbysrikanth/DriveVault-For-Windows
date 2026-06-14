@@ -5,14 +5,7 @@ import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if !hasVisibleWindows {
-            WindowManager.shared.showMainWindow(openWindow: nil)
-        } else {
-            NSApp.windows.first {
-                $0.identifier?.rawValue == "main" && $0.canBecomeKey
-            }?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        WindowManager.shared.showMainWindow(openWindow: nil)
         return true
     }
 
@@ -132,10 +125,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     private func existingMainWindow() -> NSWindow? {
-        // Check all visible windows — identifier may not be set on first launch
+        // Find any visible app window that can become key
         NSApp.windows.first {
-            ($0.identifier?.rawValue == "main" || $0.title == "Drive Vault")
-            && $0.canBecomeKey
+            $0.canBecomeKey && !$0.isMiniaturized && $0.isVisible
         }
     }
 

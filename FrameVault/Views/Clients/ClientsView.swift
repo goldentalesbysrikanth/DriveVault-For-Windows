@@ -5,6 +5,7 @@ struct ClientsView: View {
     @State private var searchText = ""
     @State private var sortOrder = ClientSort.nameAsc
     @State private var selectedGroup: ClientGroup? = nil
+    @State private var activeTab = "Clients"
 
     enum ClientSort: String, CaseIterable {
         case nameAsc  = "A–Z"
@@ -50,6 +51,21 @@ struct ClientsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // ── Tab switcher ──────────────────────────────────────────
+            HStack(spacing: 0) {
+                ForEach(["Clients", "Workflow"], id: \.self) { tab in
+                    Button { activeTab = tab } label: {
+                        Text(tab)
+                            .font(.system(size: 13, weight: activeTab == tab ? .semibold : .regular))
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(activeTab == tab ? Color.purple.opacity(0.1) : Color.clear)
+                            .foregroundStyle(activeTab == tab ? .purple : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 12)
+
             // ── Search + Sort ─────────────────────────────────────────
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
@@ -74,6 +90,10 @@ struct ClientsView: View {
             }
             .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
             .background(.background)
+
+            if activeTab == "Workflow" {
+                WorkflowView()
+            } else {
 
             // ── Header cards ─────────────────────────────────────────
             HStack(spacing: 12) {
@@ -107,6 +127,7 @@ struct ClientsView: View {
                 .padding(16)
             }
         }
+            } // end Clients tab
         .navigationTitle("Clients")
         .onReceive(store.$searchNavigationClientKey) { key in
             guard let key else { return }
@@ -157,6 +178,7 @@ struct ClientsView: View {
 // MARK: - Client group row (flat, click opens popup)
 
 struct ClientGroupRow: View {
+    @EnvironmentObject var store: AppStore
     let group: ClientGroup
     let drives: [Drive]
     let onTap: () -> Void
@@ -192,6 +214,15 @@ struct ClientGroupRow: View {
                         }
                     }
                 }
+
+                // Workflow badge
+                let wf = store.workflow(for: group)
+                Text(wf != nil ? wf!.progressDisplay : "+ Workflow")
+                    .font(.system(size: 10, weight: .medium))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(wf != nil ? Color.purple.opacity(0.1) : Color.red.opacity(0.08))
+                    .foregroundStyle(wf != nil ? .purple : .red)
+                    .clipShape(Capsule())
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13)).foregroundStyle(.tertiary)

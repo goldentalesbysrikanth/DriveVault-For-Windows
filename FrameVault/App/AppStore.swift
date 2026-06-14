@@ -50,6 +50,7 @@ final class AppStore: ObservableObject {
     @Published var drives: [Drive] = []
     @Published var shoots: [Shoot] = []
     @Published var alerts: [AppAlert] = []
+    @Published var workflows: [ClientWorkflow] = []
     @Published var recentActivity: [ActivityEvent] = []
     @Published var indexingState = IndexingState()
     @Published var appEvents: [AppEvent] = []
@@ -58,6 +59,7 @@ final class AppStore: ObservableObject {
     @Published var pendingIndexURL: URL? = nil
     @Published var searchNavigationShootID: Int64? = nil
     @Published var searchNavigationClientKey: String? = nil
+    @Published var workflowPromptGroup: ClientGroup? = nil
 
     @AppStorage("fv.autoIndexOnConnect") var autoIndexEnabled = true
 
@@ -180,6 +182,7 @@ final class AppStore: ObservableObject {
         shoots         = db.fetchAllShoots()
         recentActivity = db.fetchRecentActivity(limit: 100)
         appEvents      = db.fetchAppEvents()
+        workflows      = db.fetchAllWorkflows()
         refreshAlerts()
     }
 
@@ -381,6 +384,8 @@ final class AppStore: ObservableObject {
                 self.db.markDriveOnline(serial: serial)
                 // Delay reload to let background DB writes commit
                 self.logAppEvent(.indexComplete, detail: self.db.isDriveFirstIndex(id: serial) ? "\(serial) — Full index complete" : "\(serial) — Incremental index complete")
+                // Check for 500GB+ clients needing workflow
+                self.checkWorkflowPrompts()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.reloadImmediate()
                 }
@@ -421,6 +426,44 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: App Events
+
+    // MARK: - Workflow
+
+    func checkWorkflowPrompts() {
+        let existingNames = Set(workflows.map { $0.clientName })
+        let skipped = Set(
+            clientGroups.map { "wf_skip_\($0.displayName)" }
+                .filter { UserDefaults.standard.bool(forKey: $0) }
+        )
+        for group in clientGroups {
+            let skipKey = "wf_skip_\(group.displayName)"
+            guard group.totalBytes >= 500 * 1024 * 1024 * 1024 else { continue }
+            guard !existingNames.contains(group.displayName) else { continue }
+            guard !UserDefaults.standard.bool(forKey: skipKey) else { continue }
+            DispatchQueue.main.async {
+                self.workflowPromptGroup = group
+            }
+            break // one prompt at a time
+        }
+    }
+
+    func workflow(for group: ClientGroup) -> ClientWorkflow? {
+        workflows.first { $0.clientName == group.displayName }
+    }
+
+    func saveWorkflow(_ wf: ClientWorkflow) {
+        db.saveWorkflow(wf)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.workflows = self.db.fetchAllWorkflows()
+        }
+    }
+
+    func deleteWorkflow(for group: ClientGroup) {
+        db.deleteWorkflow(for: group.displayName)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.workflows = self.db.fetchAllWorkflows()
+        }
+    }
 
     func logAppEvent(_ kind: AppEventKind, detail: String = "") {
         db.logAppEvent(kind: kind, detail: detail)

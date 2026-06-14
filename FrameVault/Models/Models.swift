@@ -179,3 +179,59 @@ struct AppAlert: Identifiable, Codable {
         case warning, info, success, error
     }
 }
+
+// MARK: - ClientWorkflow
+struct ClientWorkflow: Identifiable, Codable {
+    var clientName: String
+    var selectionLinkStatus: String = "Not Shared"
+    var clientHDDCopyStatus: String = "Not Shared"
+    var editedPhotosStatus: String = "NA"
+    var cinematicVideoStatus: String = "NA"
+    var traditionalVideoStatus: String = "NA"
+    var albumDesigningStatus: String = "NA"
+    var completeProjectStatus: String = "NA"
+    var notes: String = ""
+    var projectStartDate: Date = Date()
+    var lastUpdatedAt: Date = Date()
+
+    var id: String { clientName }
+
+    var progressPercent: Double {
+        let groupA = [selectionLinkStatus, clientHDDCopyStatus]
+        let groupB = [editedPhotosStatus, cinematicVideoStatus,
+                      traditionalVideoStatus, albumDesigningStatus,
+                      completeProjectStatus]
+
+        var total = 0.0
+        var count = 0.0
+
+        for s in groupA {
+            count += 1
+            switch s {
+            case "Shared":    total += 100
+            case "Pending":   total += 50
+            case "On Hold":   total += 25
+            default:          total += 0
+            }
+        }
+
+        for s in groupB where s != "NA" {
+            count += 1
+            switch s {
+            case "Delivered":  total += 100
+            case "In Progress": total += 60
+            case "Started":    total += 30
+            case "On Hold":    total += 15
+            default:           total += 0
+            }
+        }
+
+        return count > 0 ? total / count : 0
+    }
+
+    var progressDisplay: String { String(format: "%.0f%%", progressPercent) }
+
+    var daysRunning: Int {
+        Calendar.current.dateComponents([.day], from: projectStartDate, to: Date()).day ?? 0
+    }
+}
