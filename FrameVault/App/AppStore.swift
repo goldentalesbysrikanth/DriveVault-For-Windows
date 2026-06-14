@@ -53,6 +53,7 @@ final class AppStore: ObservableObject {
     @Published var alerts: [AppAlert] = []
     @Published var workflows: [ClientWorkflow] = []
     @Published var recentActivity: [ActivityEvent] = []
+    @Published var allFolders: [DriveFolder] = []
     @Published var indexingState = IndexingState()
     @Published var appEvents: [AppEvent] = []
     var appInstallDate: Date? { db.appInstallDate() }

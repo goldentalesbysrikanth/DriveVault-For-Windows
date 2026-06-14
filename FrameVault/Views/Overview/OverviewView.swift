@@ -4,6 +4,8 @@ struct OverviewView: View {
     @EnvironmentObject var store: AppStore
     @Binding var selection: SidebarItem
     @State private var searchText = ""
+    @State private var searchFolders: [DriveFolder] = []
+    @State private var foldersLoaded = false
     @State private var showActivitySheet = false
 
     var body: some View {
@@ -16,6 +18,17 @@ struct OverviewView: View {
         }
         .navigationTitle("Overview")
         .searchable(text: $searchText, prompt: "Search shoots, drives, clients…")
+        .onChange(of: searchText) { _, newVal in
+            if !newVal.isEmpty && !foldersLoaded {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let folders = store.db.fetchAllFolders()
+                    DispatchQueue.main.async {
+                        searchFolders = folders
+                        foldersLoaded = true
+                    }
+                }
+            }
+        }
     }
 
     // ── Dashboard ──────────────────────────────────────────────────────
@@ -320,7 +333,13 @@ struct OverviewView: View {
         // Search drives by name
         let driveResults = store.drives.filter { $0.name.lowercased().contains(q) }
 
-        let totalResults = shootResults.count + driveResults.count
+        // Search folders by name — uses in-memory cache, no DB reads per keystroke
+        let shootMap = Dictionary(uniqueKeysWithValues: store.shoots.map { ($0.id, $0) })
+        // Load folders synchronously on first search if not yet loaded
+        let foldersToSearch: [DriveFolder] = foldersLoaded ? searchFolders : store.db.fetchAllFolders()
+        let folderResults: [DriveFolder] = foldersToSearch.filter { $0.name.lowercased().contains(q) }
+
+        let totalResults = shootResults.count + driveResults.count + folderResults.count
 
         return Group {
             if totalResults == 0 {
@@ -387,6 +406,136 @@ struct OverviewView: View {
                                         selection = .library
                                     }
                                 )
+                                Divider()
+                            }
+                        }
+
+                        // Folder records section
+                        if !folderResults.isEmpty {
+                            Text("FOLDERS")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .tracking(0.5)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                            ForEach(folderResults) { folder in
+                                let shoot = shootMap[folder.shootID]
+                                let drive = shoot.flatMap { driveMap[$0.driveID] }
+                                Button {
+                                    if let shoot {
+                                        store.searchNavigationShootID = shoot.id
+                                        selection = .library
+                                    }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color.purple.opacity(0.1))
+                                                .frame(width: 28, height: 28)
+                                            Image(systemName: "folder")
+                                                .foregroundStyle(.purple)
+                                                .font(.system(size: 12))
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(folder.name)
+                                                .font(.system(size: 13, weight: .medium))
+                                            HStack(spacing: 6) {
+                                                if let drive {
+                                                    Label(drive.name, systemImage: "externaldrive")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                if let shoot {
+                                                    Text("· \(shoot.displayName)")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.tertiary)
+                                                }
+                                            }
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text(folder.formattedSize)
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                            Text(folder.formattedFileCount)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Divider()
+                            }
+                        }
+
+                        // Folder records section
+                        let shootMap = Dictionary(uniqueKeysWithValues: store.shoots.map { ($0.id, $0) })
+                        let folderResults: [DriveFolder] = store.shoots.flatMap { shoot in
+                            store.folders(for: shoot).filter { folder in
+                                folder.name.lowercased().contains(q)
+                            }
+                        }
+                        if !folderResults.isEmpty {
+                            Text("FOLDERS")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .tracking(0.5)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                            ForEach(folderResults) { folder in
+                                let shoot = shootMap[folder.shootID]
+                                let drive = shoot.flatMap { driveMap[$0.driveID] }
+                                Button {
+                                    if let shoot {
+                                        store.searchNavigationShootID = shoot.id
+                                        selection = .library
+                                    }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color.purple.opacity(0.1))
+                                                .frame(width: 28, height: 28)
+                                            Image(systemName: "folder")
+                                                .foregroundStyle(.purple)
+                                                .font(.system(size: 12))
+                                        }
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(folder.name)
+                                                .font(.system(size: 13, weight: .medium))
+                                            HStack(spacing: 6) {
+                                                if let drive {
+                                                    Label(drive.name, systemImage: "externaldrive")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                if let shoot {
+                                                    Text("· \(shoot.displayName)")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.tertiary)
+                                                }
+                                            }
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text(folder.formattedSize)
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                            Text(folder.formattedFileCount)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                                 Divider()
                             }
                         }
