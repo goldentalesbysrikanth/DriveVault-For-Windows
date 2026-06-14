@@ -24,6 +24,12 @@ struct SettingsView: View {
 
     // Snapshots
     @State private var snapshots: [DatabaseSnapshot] = []
+
+    // Passcode prompt
+    @State private var pendingAuthAction: (() -> Void)? = nil
+    @State private var showPasscodePrompt = false
+    @State private var passcodeInput = ""
+    @State private var passcodeError = false
     @State private var showRestoreConfirm: DatabaseSnapshot? = nil
 
     // Reset confirmations
@@ -214,7 +220,11 @@ struct SettingsView: View {
                                         Text(snap.displayName)
                                             .font(.callout)
                                         Spacer()
-                                        Button("Restore") { showRestoreConfirm = snap }
+                                        Button("Restore") {
+                                            requireAuth(reason: "Authenticate to restore database") {
+                                                showRestoreConfirm = snap
+                                            }
+                                        }
                                             .buttonStyle(.bordered).controlSize(.small)
                                     }
                                 }
@@ -222,16 +232,25 @@ struct SettingsView: View {
                         }
                     }
                     settingsRow {
-                        HStack {
-                            Button("Reveal in Finder") {
-                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: dbPath)])
+                        Button("Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: dbPath)])
+                        }
+                        .buttonStyle(.link)
+                    }
+                    settingsRow {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Backup").font(.callout.bold())
+                            Text("Auto backup runs daily. Last 7 backups kept automatically.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button {
+                                store.db.createSnapshot()
+                                snapshots = store.db.fetchSnapshots()
+                                store.logAppEvent(.exportDone, detail: "Manual backup created")
+                            } label: {
+                                Label("Create Manual Backup", systemImage: "externaldrive.badge.plus")
+                                    .font(.callout)
                             }
-                            .buttonStyle(.link)
-                            Spacer()
-                            Button("Reset Database…") { showDBResetConfirm = true }
-                                .foregroundStyle(.orange).buttonStyle(.link)
-                            Button("Reset App…") { showAppResetConfirm = true }
-                                .foregroundStyle(.red).buttonStyle(.link)
+                            .buttonStyle(.bordered).controlSize(.small).padding(.top, 2)
                         }
                     }
                     settingsRow {
@@ -239,6 +258,12 @@ struct SettingsView: View {
                             Text("Reset Database").font(.callout.bold())
                             Text("Deletes all indexed drive, shoot, and folder data. Activity log and settings are preserved.")
                                 .font(.caption).foregroundStyle(.secondary)
+                            Button("Reset Database…") {
+                                requireAuth(reason: "Authenticate to reset database") {
+                                    showDBResetConfirm = true
+                                }
+                            }
+                            .foregroundStyle(.orange).buttonStyle(.bordered).controlSize(.small).padding(.top, 2)
                         }
                     }
                     settingsRow {
@@ -246,6 +271,12 @@ struct SettingsView: View {
                             Text("Reset App").font(.callout.bold())
                             Text("Deletes everything including activity log and all settings. Returns app to a clean install state.")
                                 .font(.caption).foregroundStyle(.secondary)
+                            Button("Reset App…") {
+                                requireAuth(reason: "Authenticate to reset app") {
+                                    showAppResetConfirm = true
+                                }
+                            }
+                            .foregroundStyle(.red).buttonStyle(.bordered).controlSize(.small).padding(.top, 2)
                         }
                     }
                 }
@@ -294,6 +325,25 @@ struct SettingsView: View {
             Text("This will replace your current database with the selected backup. Current data will be lost.")
         }
         .onAppear { snapshots = store.db.fetchSnapshots() }
+        .alert("Enter Passcode", isPresented: $showPasscodePrompt) {
+            SecureField("Passcode", text: $passcodeInput)
+            Button("Confirm") {
+                if pm.verify(passcodeInput) {
+                    passcodeError = false
+                    pendingAuthAction?()
+                    pendingAuthAction = nil
+                } else {
+                    passcodeError = true
+                    passcodeInput = ""
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAuthAction = nil
+                passcodeInput = ""
+            }
+        } message: {
+            Text(passcodeError ? "Wrong passcode. Try again." : "Enter your passcode to continue.")
+        }
 
         // MARK: Database Reset
         .confirmationDialog("Reset Database?", isPresented: $showDBResetConfirm, titleVisibility: .visible) {
@@ -380,23 +430,35 @@ struct SettingsView: View {
         excludedDrivesRaw = excludedDrives.filter { $0 != name }.joined(separator: ",")
     }
 
+    private func requireAuth(reason: String, action: @escaping () -> Void) {
+        guard pm.isPasscodeEnabled else { action(); return }
+        if pm.isBiometricsEnabled && pm.biometricsAvailable {
+            pm.authenticateWithBiometrics(reason: reason) { success in
+                DispatchQueue.main.async { if success { action() } }
+            }
+        } else {
+            pendingAuthAction = action
+            passcodeInput = ""
+            passcodeError = false
+            showPasscodePrompt = true
+        }
+    }
+
     private func resetDatabase() {
         store.logAppEvent(.databaseReset, detail: "All index data deleted. Activity log preserved.")
-        try? FileManager.default.removeItem(atPath: dbPath)
         UserDefaults.standard.removeObject(forKey: "fv.snoozed")
-        store.reload()
+        store.pauseAndReset { }
     }
 
     private func resetApp() {
         store.logAppEvent(.appReset, detail: "Full app reset. All data and settings deleted.")
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first!.appendingPathComponent("Drive Vault")
-        try? FileManager.default.removeItem(at: appSupport)
-        // Clear all UserDefaults
-        if let bundleID = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+        store.pauseAndReset {
+            // Never delete drivevault.sqlite — tables already truncated by pauseAndReset
+            // Only clear UserDefaults
+            if let bundleID = Bundle.main.bundleIdentifier {
+                UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            }
         }
-        store.reload()
     }
 
     private var dbPath: String {

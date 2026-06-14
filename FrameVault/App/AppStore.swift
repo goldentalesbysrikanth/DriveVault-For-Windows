@@ -48,6 +48,7 @@ final class AppStore: ObservableObject {
     // MARK: Published State
 
     @Published var drives: [Drive] = []
+    var isResetting = false
     @Published var shoots: [Shoot] = []
     @Published var alerts: [AppAlert] = []
     @Published var workflows: [ClientWorkflow] = []
@@ -178,6 +179,7 @@ final class AppStore: ObservableObject {
     }
 
     private func reloadImmediate() {
+        guard !isResetting else { return }
         drives         = db.fetchAllDrives()
         shoots         = db.fetchAllShoots()
         recentActivity = db.fetchRecentActivity(limit: 100)
@@ -236,6 +238,7 @@ final class AppStore: ObservableObject {
     // MARK: Drive Connected
 
     func handleDriveConnected(_ volumeURL: URL) {
+        guard !isResetting else { return }
         let volumeName = volumeURL.lastPathComponent
         guard isValidDriveName(volumeName) else { return }
 
@@ -462,6 +465,27 @@ final class AppStore: ObservableObject {
         db.deleteWorkflow(for: group.displayName)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.workflows = self.db.fetchAllWorkflows()
+        }
+    }
+
+    func pauseAndReset(completion: @escaping () -> Void) {
+        // Set flags FIRST before anything else
+        isResetting = true
+        db.isResetting = true
+        // Stop all timers and watchers
+        cancellables.removeAll()
+        Task { await indexEngine.stopAllWatchers() }
+        // Clear in-memory state
+        drives = []
+        shoots = []
+        workflows = []
+        recentActivity = []
+        // Delete on DB queue — completion fires on main when done
+        db.resetAllDriveData {
+            self.isResetting = false
+            self.db.isResetting = false
+            self.setupDrivePolling()
+            completion()
         }
     }
 

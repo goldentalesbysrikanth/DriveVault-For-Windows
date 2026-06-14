@@ -243,8 +243,11 @@ final class DatabaseManager {
 
     // MARK: - Drives
 
+    var isResetting = false
+
     func fetchAllDrives() -> [Drive] {
-        queue.sync {
+        guard !isResetting else { return [] }
+        return queue.sync {
             (try? db.prepare(drivesTable).map(rowToDrive)) ?? []
         }
     }
@@ -347,7 +350,8 @@ final class DatabaseManager {
     // MARK: - Shoots
 
     func fetchAllShoots() -> [Shoot] {
-        queue.sync {
+        guard !isResetting else { return [] }
+        return queue.sync {
             (try? db.prepare(shootsTable).map(rowToShoot)) ?? []
         }
     }
@@ -435,7 +439,8 @@ final class DatabaseManager {
     // MARK: - Folders
 
     func fetchAllFolders() -> [DriveFolder] {
-        queue.sync {
+        guard !isResetting else { return [] }
+        return queue.sync {
             (try? db.prepare(foldersTable).map(rowToFolder)) ?? []
         }
     }
@@ -516,7 +521,8 @@ final class DatabaseManager {
     }
 
     func fetchRecentActivity(limit: Int = 10000) -> [ActivityEvent] {
-        queue.sync {
+        guard !isResetting else { return [] }
+        return queue.sync {
             let q = activityTable.order(colActivityAt.desc).limit(limit)
             return (try? activityDB.prepare(q).map { row in
                 ActivityEvent(
@@ -564,7 +570,8 @@ final class DatabaseManager {
     }
 
     func fetchAppEvents() -> [AppEvent] {
-        queue.sync {
+        guard !isResetting else { return [] }
+        return queue.sync {
             let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
             let q = appEventsTable
                 .filter(colAppEventAt >= cutoff)
@@ -595,7 +602,8 @@ final class DatabaseManager {
     }
 
     func fetchAllWorkflows() -> [ClientWorkflow] {
-        (try? db.prepare(workflowTable).map { rowToWorkflow($0) }) ?? []
+        guard !isResetting else { return [] }
+        return (try? db.prepare(workflowTable).map { rowToWorkflow($0) }) ?? []
     }
 
     func saveWorkflow(_ wf: ClientWorkflow) {
@@ -638,6 +646,22 @@ final class DatabaseManager {
             projectStartDate:        row[colWFStartDate],
             lastUpdatedAt:           row[colWFUpdatedAt]
         )
+    }
+
+    // MARK: - Reset (truncate tables, never delete file)
+
+    func resetAllDriveData(completion: @escaping () -> Void) {
+        queue.async {
+            _ = try? self.db.transaction {
+                try self.db.run("DELETE FROM folders")
+                try self.db.run("DELETE FROM shoots")
+                try self.db.run("DELETE FROM drives")
+            }
+            DispatchQueue.main.async {
+                self.isResetting = false
+                completion()
+            }
+        }
     }
 
     func appInstallDate() -> Date? {
