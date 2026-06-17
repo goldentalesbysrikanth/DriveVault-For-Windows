@@ -67,21 +67,7 @@ struct ContentView: View {
         .onChange(of: selection) { newValue in
             lastSelection = newValue.rawValue
         }
-        .sheet(item: $store.workflowPromptGroup) { group in
-            WorkflowPromptSheet(
-                group: group,
-                onAttach: {
-                    store.workflowPromptGroup = nil
-                    selection = .clients
-                },
-                onLater: { store.workflowPromptGroup = nil },
-                onNever: {
-                    UserDefaults.standard.set(true, forKey: "wf_skip_\(group.displayName)")
-                    store.workflowPromptGroup = nil
-                }
-            )
-            .environmentObject(store)
-        }
+
         .alert("Index \(store.pendingIndexURL?.lastPathComponent ?? "drive")?",
                isPresented: $store.showIndexPrompt) {
             Button("Index Now") { store.confirmIndexPrompt() }

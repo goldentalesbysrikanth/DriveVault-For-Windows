@@ -4,6 +4,7 @@ struct LibraryView: View {
     @EnvironmentObject var store: AppStore
     @State private var searchText = ""
     @State private var expandedShootID: Int64? = nil
+    @State private var expandedFolders: [DriveFolder] = []
     @State private var sortOrder = SortOrder.dateDesc
     @State private var driveFilter: String? = nil
     @State private var selectedShoot: Shoot? = nil
@@ -84,12 +85,28 @@ struct LibraryView: View {
                         LibraryTableRow(
                             shoot: shoot,
                             drive: driveMap[shoot.driveID],
-                            folders: isExpanded ? store.folders(for: shoot) : [],
+                            folders: isExpanded ? expandedFolders : [],
                             isExpanded: isExpanded,
                             onTap: { selectedShoot = shoot },
                             onExpand: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    expandedShootID = expandedShootID == shoot.id ? nil : shoot.id
+                                if expandedShootID == shoot.id {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        expandedShootID = nil
+                                        expandedFolders = []
+                                    }
+                                } else {
+                                    expandedShootID = shoot.id
+                                    expandedFolders = []
+                                    let shootID = shoot.id
+                                    DispatchQueue.global(qos: .userInitiated).async {
+                                        let folders = store.db.fetchFolders(for: shootID)
+                                        DispatchQueue.main.async {
+                                            guard expandedShootID == shootID else { return }
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                                expandedFolders = folders
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -147,7 +164,7 @@ struct LibraryView: View {
     }
 
     private func totalFiles(_ shoot: Shoot) -> Int64 {
-        store.folders(for: shoot).filter { $0.depth == 0 }.reduce(0) { $0 + $1.fileCount }
+        shoot.totalBytes // use cached size as proxy — avoids DB hit per shoot on every render
     }
 
     private var driveMap: [String: Drive] {
@@ -239,10 +256,15 @@ struct LibraryTableRow: View {
                 VStack(spacing: 0) {
                     Divider()
                     let rootFolders = folders.filter { $0.depth == 0 }
+                    let cm: [Int64: [DriveFolder]] = {
+                        var map: [Int64: [DriveFolder]] = [:]
+                        for f in folders { if let pid = f.parentID { map[pid, default: []].append(f) } }
+                        return map
+                    }()
                     ForEach(rootFolders) { folder in
                         ExpandableFolderRow(
                             folder: folder,
-                            allFolders: folders,
+                            childrenMap: cm,
                             shootTotalBytes: shoot.totalBytes
                         )
                         if folder.id != rootFolders.last?.id {
@@ -278,7 +300,7 @@ struct LibraryTableRow: View {
 
 struct ExpandableFolderRow: View {
     let folder: DriveFolder
-    let allFolders: [DriveFolder]
+    let childrenMap: [Int64: [DriveFolder]]
     let shootTotalBytes: Int64
 
     @State private var isExpanded = false
@@ -295,8 +317,7 @@ struct ExpandableFolderRow: View {
     }
 
     private var children: [DriveFolder] {
-        allFolders.filter { $0.parentID == folder.id }
-            .sorted { $0.sizeBytes > $1.sizeBytes }
+        childrenMap[folder.id] ?? []
     }
 
     private var hasChildren: Bool {
@@ -384,7 +405,7 @@ struct ExpandableFolderRow: View {
                         Divider().padding(.leading, indent + indentPerLevel)
                         ExpandableFolderRow(
                             folder: child,
-                            allFolders: allFolders,
+                            childrenMap: childrenMap,
                             shootTotalBytes: shootTotalBytes
                         )
                     }
@@ -412,9 +433,19 @@ struct ShootDetailView: View {
     let drive: Drive?
     let onBack: () -> Void
 
-    private var folders: [DriveFolder] { store.folders(for: shoot) }
+    @State private var folders: [DriveFolder] = []
+    @State private var isLoadingFolders = true
     private var rootFolders: [DriveFolder] { folders.filter { $0.depth == 0 }.sorted { $0.sizeBytes > $1.sizeBytes } }
     private var totalFileCount: Int64 { rootFolders.reduce(0) { $0 + $1.fileCount } }
+    private var childrenMap: [Int64: [DriveFolder]] {
+        var map: [Int64: [DriveFolder]] = [:]
+        for folder in folders {
+            guard let pid = folder.parentID else { continue }
+            map[pid, default: []].append(folder)
+        }
+        for key in map.keys { map[key]?.sort { $0.sizeBytes > $1.sizeBytes } }
+        return map
+    }
 
     var body: some View {
         ScrollView {
@@ -439,7 +470,7 @@ struct ShootDetailView: View {
 
                 VStack(spacing: 0) {
                     ForEach(rootFolders) { folder in
-                        ExpandableFolderRow(folder: folder, allFolders: folders, shootTotalBytes: shoot.totalBytes)
+                        ExpandableFolderRow(folder: folder, childrenMap: childrenMap, shootTotalBytes: shoot.totalBytes)
                         if folder.id != rootFolders.last?.id { Divider().padding(.leading, 16) }
                     }
                     if rootFolders.isEmpty {
@@ -458,6 +489,16 @@ struct ShootDetailView: View {
             .padding(20)
         }
         .background(Color(.windowBackgroundColor))
+        .task {
+            let shootID = shoot.id
+            let loaded = await Task.detached(priority: .userInitiated) {
+                store.db.fetchFolders(for: shootID)
+            }.value
+            await MainActor.run {
+                folders = loaded
+                isLoadingFolders = false
+            }
+        }
     }
 
     private func detailStatCard(_ label: String, value: String) -> some View {

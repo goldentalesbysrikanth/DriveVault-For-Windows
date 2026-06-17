@@ -12,34 +12,35 @@ final class DriveMonitor {
     var driveDisconnected: AnyPublisher<String, Never> { driveDisconnectedSubject.eraseToAnyPublisher() }
 
     private var session: DASession?
-    private var autoScanTimer: Timer?
+    private var autoScanTimer: DispatchSourceTimer?
     private var lastKnownVolumes = Set<String>()
     private let log = Logger(subsystem: "com.drivevault", category: "DriveMonitor")
 
     private let systemVolumeNames: Set<String> = [
-        "Macintosh HD", "Data", "Preboot", "Recovery",
-        "VM", "Update", "com.apple.os.update",
-        "Hardware", "iSCPreboot", "mnt1", "xarts", "home"
+        "Macintosh HD","Data","Preboot","Recovery","VM","Update","com.apple.os.update",
+        "Hardware","iSCPreboot","mnt1","xarts","home"
     ]
 
     // MARK: - Lifecycle
 
-    func start() {
-        print("🟢 DriveMonitor.start() called")
+    func start(scanInterval: TimeInterval = 5.0) {
+        log.info("DriveMonitor.start() called")
 
         // Initial scan
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.scanMountedVolumes()
         }
 
-        // Auto-scan every 5 seconds as backup — catches drives DA misses
-        autoScanTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.scanMountedVolumes()
-        }
+        // Auto-scan timer
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
+        timer.schedule(deadline: .now() + scanInterval, repeating: scanInterval)
+        timer.setEventHandler { [weak self] in self?.scanMountedVolumes() }
+        timer.resume()
+        autoScanTimer = timer
 
-        // DA session for real-time detection
+        // DiskArbitration session
         guard let session = DASessionCreate(kCFAllocatorDefault) else {
-            print("❌ Failed to create DiskArbitration session")
+            log.error("Failed to create DiskArbitration session")
             return
         }
         self.session = session
@@ -57,50 +58,43 @@ final class DriveMonitor {
             monitor.handleDisappear(disk: disk)
         }, Unmanaged.passUnretained(self).toOpaque())
 
-        print("✅ DriveMonitor ready — DA + auto-scan active")
+        log.info("DriveMonitor ready — DA + auto-scan active")
     }
 
     func stop() {
-        autoScanTimer?.invalidate()
+        autoScanTimer?.cancel()
         autoScanTimer = nil
         if let session {
             DASessionSetDispatchQueue(session, nil)
         }
         session = nil
+        log.info("DriveMonitor stopped")
     }
 
-    // MARK: - Auto scan (backup mechanism)
-    // Runs every 5s — detects drives that DA callbacks miss
+    // MARK: - Auto scan
 
     private func scanMountedVolumes() {
-        guard let mounts = FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: nil,
-            options: .skipHiddenVolumes
-        ) else { return }
+        guard let mounts = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil,
+                                                                 options: .skipHiddenVolumes) else {
+            log.error("Failed to fetch mounted volumes")
+            return
+        }
 
         let currentVolumes = Set(mounts.map { $0.lastPathComponent })
 
-        // Detect new volumes
         for url in mounts {
             let name = url.lastPathComponent
-            guard shouldIndex(url: url) else { continue }
-            guard !lastKnownVolumes.contains(name) else { continue }
-            print("📡 Auto-scan detected: \(name)")
+            guard shouldIndex(url: url), !lastKnownVolumes.contains(name) else { continue }
+            log.info("Auto-scan detected: \(name)")
             driveConnectedSubject.send(url)
         }
 
-        // Detect removed volumes
-        for name in lastKnownVolumes {
-            if !currentVolumes.contains(name) {
-                print("📡 Auto-scan lost: \(name)")
-                driveDisconnectedSubject.send(name)
-            }
+        for name in lastKnownVolumes where !currentVolumes.contains(name) {
+            log.info("Auto-scan lost: \(name)")
+            driveDisconnectedSubject.send(name)
         }
 
-        lastKnownVolumes = Set(mounts.compactMap { url -> String? in
-            let name = url.lastPathComponent
-            return shouldIndex(url: url) ? name : nil
-        })
+        lastKnownVolumes = Set(mounts.compactMap { shouldIndex(url: $0) ? $0.lastPathComponent : nil })
     }
 
     // MARK: - DA Callbacks
@@ -108,30 +102,27 @@ final class DriveMonitor {
     private func handleAppear(disk: DADisk) {
         guard let desc = DADiskCopyDescription(disk) as? [String: Any] else { return }
 
-        // Case 1: volume already fully mounted — DAVolumePath present
         if let volumeURL = desc[kDADiskDescriptionVolumePathKey as String] as? URL {
             let name = volumeURL.lastPathComponent
             guard shouldIndex(url: volumeURL) else { return }
-            print("🔌 DA detected: \(name)")
+            log.info("DA detected: \(name)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.driveConnectedSubject.send(volumeURL)
             }
             return
         }
 
-        // Case 2: volume still mounting — DAVolumePath missing, use DAVolumeName
         guard let volumeName = desc[kDADiskDescriptionVolumeNameKey as String] as? String,
               !volumeName.isEmpty,
               shouldIndexByName(volumeName) else { return }
 
-        print("🔌 DA detected (mounting): \(volumeName) — waiting 2.5s")
+        log.info("DA detected (mounting): \(volumeName) — waiting 2.5s")
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            guard let url = DriveMonitor.mountedURL(for: volumeName) else {
-                print("⚠️ \(volumeName) not found after delay — auto-scan will catch it")
+            guard let url = DriveMonitor.mountedURL(for: volumeName), self.shouldIndex(url: url) else {
+                self.log.warning("\(volumeName) not found after delay — auto-scan will catch it")
                 return
             }
-            guard self.shouldIndex(url: url) else { return }
-            print("✅ DA delayed: \(volumeName)")
+            self.log.info("DA delayed: \(volumeName)")
             self.driveConnectedSubject.send(url)
         }
     }
@@ -142,43 +133,41 @@ final class DriveMonitor {
             ?? (desc[kDADiskDescriptionMediaBSDNameKey as String] as? String)
             ?? "unknown"
         guard shouldIndexByName(name) else { return }
-        print("🔌 DA lost: \(name)")
+        log.info("DA lost: \(name)")
         driveDisconnectedSubject.send(name)
     }
 
     // MARK: - Filtering
 
     private func shouldIndex(url: URL) -> Bool {
-        let name = url.lastPathComponent
-        return shouldIndexByName(name)
+        shouldIndexByName(url.lastPathComponent)
     }
 
     private func shouldIndexByName(_ name: String) -> Bool {
-        if systemVolumeNames.contains(name) { return false }
-        if name.hasPrefix("com.apple") { return false }
-        if name.hasPrefix(".") { return false }
-        if name == "/" || name.isEmpty { return false }
+        guard !systemVolumeNames.contains(name),
+              !name.hasPrefix("com.apple"),
+              !name.hasPrefix("."),
+              name != "/" && !name.isEmpty else { return false }
         return true
     }
 
     // MARK: - Static helpers
 
     static func mountedURL(for volumeName: String) -> URL? {
-        FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: nil,
-            options: .skipHiddenVolumes
-        )?.first { $0.lastPathComponent == volumeName }
+        FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil,
+                                              options: .skipHiddenVolumes)?
+            .first { $0.lastPathComponent == volumeName }
     }
 
     static func driveInfo(for volumeURL: URL) -> (connectionType: String?, driveType: String?) {
         guard let session = DASessionCreate(kCFAllocatorDefault),
               let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, volumeURL as CFURL),
               let desc = DADiskCopyDescription(disk) as? [String: Any] else {
-            return (connectionType: "USB", driveType: "HDD")
+            return ("USB", "HDD")
         }
         let bus = desc[kDADiskDescriptionDeviceProtocolKey as String] as? String ?? "USB"
         let isRemovable = desc[kDADiskDescriptionMediaRemovableKey as String] as? Bool ?? false
-        let driveType = isRemovable ? "Flash" : "HDD"
-        return (connectionType: bus, driveType: driveType)
+        return (bus, isRemovable ? "Flash" : "HDD")
     }
 }
+

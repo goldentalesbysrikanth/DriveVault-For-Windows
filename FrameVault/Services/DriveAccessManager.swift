@@ -4,14 +4,10 @@ import AppKit
 /// Manages security-scoped bookmarks for external drives.
 /// Required under App Sandbox to read external volume contents.
 final class DriveAccessManager {
-
     private let defaults = UserDefaults.standard
     private let bookmarkKeyPrefix = "fv.bookmark."
 
     // ── Request access ─────────────────────────────────────────────────
-
-    /// Asks the user to grant access to a volume via NSOpenPanel.
-    /// Returns the URL with access granted, or nil if cancelled.
     @MainActor
     func requestAccess(for volumeURL: URL) async -> URL? {
         let panel = NSOpenPanel()
@@ -22,47 +18,42 @@ final class DriveAccessManager {
         panel.canCreateDirectories = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = volumeURL
-
         let result = await panel.beginSheetModal(for: NSApp.keyWindow ?? NSApp.windows.first ?? NSWindow())
         guard result == .OK, let url = panel.url else { return nil }
-
-        // Save bookmark so we never need to ask again
         saveBookmark(for: url)
         return url
     }
 
     // ── Bookmark management ────────────────────────────────────────────
-
     func saveBookmark(for url: URL) {
         do {
-            let bookmark = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
+            let bookmark = try url.bookmarkData(options: .withSecurityScope,
+                                                includingResourceValuesForKeys: nil,
+                                                relativeTo: nil)
             defaults.set(bookmark, forKey: bookmarkKeyPrefix + url.lastPathComponent)
+            NSLog("Saved bookmark for \(url.lastPathComponent)")
         } catch {
-            
+            NSLog("Failed to save bookmark for \(url): \(error)")
         }
     }
 
-    /// Resolves a saved bookmark and starts accessing the security-scoped resource.
-    /// Returns the resolved URL if successful.
     func resolveBookmark(for volumeName: String) -> URL? {
         guard let data = defaults.data(forKey: bookmarkKeyPrefix + volumeName) else { return nil }
         var isStale = false
         do {
-            let url = try URL(
-                resolvingBookmarkData: data,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
+            let url = try URL(resolvingBookmarkData: data,
+                              options: .withSecurityScope,
+                              relativeTo: nil,
+                              bookmarkDataIsStale: &isStale)
             if isStale { saveBookmark(for: url) }
-            url.startAccessingSecurityScopedResource()
-            return url
+            if url.startAccessingSecurityScopedResource() {
+                return url
+            } else {
+                NSLog("Failed to start accessing resource for \(volumeName)")
+                return nil
+            }
         } catch {
-           
+            NSLog("Failed to resolve bookmark for \(volumeName): \(error)")
             return nil
         }
     }
@@ -73,5 +64,23 @@ final class DriveAccessManager {
 
     func stopAccessing(_ url: URL) {
         url.stopAccessingSecurityScopedResource()
+        NSLog("Stopped accessing \(url.lastPathComponent)")
+    }
+
+    // ── Batch helpers ──────────────────────────────────────────────────
+    func allBookmarks() -> [String] {
+        defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(bookmarkKeyPrefix) }
+            .map { $0.replacingOccurrences(of: bookmarkKeyPrefix, with: "") }
+    }
+
+    @MainActor
+    func stopAllAccess() {
+        for volumeName in allBookmarks() {
+            if let url = resolveBookmark(for: volumeName) {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        NSLog("Stopped all drive access")
     }
 }

@@ -148,16 +148,26 @@ struct MenuBarMenu: View {
             Text("No drives connected").foregroundStyle(.secondary)
         } else {
             ForEach(store.drives.filter({ $0.isOnline })) { drive in
-                Label(drive.name, systemImage: "externaldrive.fill")
+                if let total = drive.totalBytes, let used = drive.usedBytes {
+                    let pct = Double(used) / Double(total)
+                    Label("\(drive.name) — \(Int(pct * 100))%",
+                          systemImage: "externaldrive.fill")
+                } else {
+                    Label(drive.name, systemImage: "externaldrive.fill")
+                }
             }
         }
 
         Divider()
 
         if !store.alerts.isEmpty {
-            Label("\(store.alerts.count) alert\(store.alerts.count == 1 ? "" : "s")",
-                  systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+            Button {
+                WindowManager.shared.showMainWindow(openWindow: openWindow)
+            } label: {
+                Label("\(store.alerts.count) alert\(store.alerts.count == 1 ? "" : "s")",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
         }
 
         Button("Open Drive Vault…") {

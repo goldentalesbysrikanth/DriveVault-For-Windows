@@ -46,7 +46,6 @@ struct AlertPreferences {
 final class AppStore: ObservableObject {
 
     // MARK: Published State
-
     @Published var drives: [Drive] = []
     var isResetting = false
     @Published var shoots: [Shoot] = []
@@ -67,7 +66,6 @@ final class AppStore: ObservableObject {
     @AppStorage("fv.autoIndexOnConnect") var autoIndexEnabled = true
 
     // MARK: Managers
-
     let db: DatabaseManager
     let accessManager = DriveAccessManager()
     private var driveMonitor: DriveMonitor?
@@ -75,17 +73,11 @@ final class AppStore: ObservableObject {
     private let indexEngine: IndexEngine
 
     // MARK: Internal State
-
     private var indexQueue: [URL] = []
     private var seenThisSession = Set<String>()
     private var pendingPromptQueue: [URL] = []
-
-    // Tracks drives where user declined the index prompt this session.
-    // These are removed from the app when disconnected and re-prompted when reconnected.
     private var declinedDrives = Set<String>()
     private var loggedConnectThisSession = Set<String>()
-
-    // Debounce reload — prevents rapid-fire DB hits
     private var reloadTask: Task<Void, Never>? = nil
 
     private let skipNames: Set<String> = [
@@ -100,7 +92,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Init
-
     init() {
         self.db = DatabaseManager()
         self.indexEngine = IndexEngine(db: db)
@@ -132,7 +123,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Helpers
-
     private func isValidDriveName(_ name: String) -> Bool {
         guard !skipNames.contains(name),
               !userExcludedDrives.contains(name),
@@ -149,13 +139,12 @@ final class AppStore: ObservableObject {
             let name = url.lastPathComponent
             guard isValidDriveName(name) else { continue }
             guard !db.isDriveFirstIndex(id: name) else { continue }
-            let volumeURL = url
             Task {
-                await indexEngine.startWatching(volumeURL: volumeURL) {
+                await indexEngine.startWatching(volumeURL: url) {
                     Task { @MainActor in
                         guard !self.indexingState.isIndexing else { return }
                         print("📂 FSEvents: change on \(name) — queuing re-scan")
-                        self.indexDrive(volumeURL, force: true)
+                        self.indexDrive(url, force: true)
                     }
                 }
             }
@@ -169,8 +158,7 @@ final class AppStore: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: Reload — debounced to prevent rapid-fire DB access
-
+    // MARK: Reload
     func reload() {
         reloadTask?.cancel()
         reloadTask = Task { @MainActor in
@@ -209,7 +197,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Drive Monitoring
-
     private func forceScanAllVolumes() {
         guard let mounts = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: nil, options: .skipHiddenVolumes
@@ -232,7 +219,6 @@ final class AppStore: ObservableObject {
         for drive in drives where !mountedNames.contains(drive.name) && drive.isOnline {
             db.markDriveOffline(serial: drive.id)
             seenThisSession.remove(drive.id)
-            // If user declined index for this drive, remove it from app on disconnect
             if declinedDrives.contains(drive.id) {
                 db.deleteDrive(id: drive.id)
                 declinedDrives.remove(drive.id)
@@ -247,7 +233,8 @@ final class AppStore: ObservableObject {
                 if !existing.isOnline {
                     db.markDriveOnline(serial: name)
                     reload()
-                    handleDriveConnected(URL(fileURLWithPath: "/Volumes/\(name)"))
+                    handleDriveConnected(URL(fileURLWithPath:
+                    "/Volumes/\(name)"))
                 }
             } else {
                 handleDriveConnected(URL(fileURLWithPath: "/Volumes/\(name)"))
@@ -256,7 +243,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Drive Connected
-
     func handleDriveConnected(_ volumeURL: URL) {
         guard !isResetting else { return }
         let volumeName = volumeURL.lastPathComponent
@@ -292,13 +278,11 @@ final class AppStore: ObservableObject {
 
         seenThisSession.insert(volumeName)
         print("✅ proceeding for: \(volumeName)")
-        // Only log drive connected once per session per drive
         if !loggedConnectThisSession.contains(volumeName) {
             loggedConnectThisSession.insert(volumeName)
             logAppEvent(.driveConnected, detail: volumeName)
         }
 
-        // Only prompt/index if drive has never been indexed
         let isFirstIndex = db.isDriveFirstIndex(id: volumeName)
         if !isFirstIndex && !declinedDrives.contains(volumeName) {
             print("✅ already indexed, starting watcher + incremental index for: \(volumeName)")
@@ -319,12 +303,10 @@ final class AppStore: ObservableObject {
     }
 
     func declineIndexPrompt() {
-        // Mark drive as declined — it will be removed from app when disconnected
-        // and re-prompted as a new drive when reconnected
         if let url = pendingIndexURL {
             let name = url.lastPathComponent
             declinedDrives.insert(name)
-            print("⏭ Index declined for: \(name) — will vanish on disconnect")
+            print("⏭ Index declined for: \(name)")
             logAppEvent(.indexSkipped, detail: "Index skipped for \(name)")
         }
         pendingIndexURL = nil
@@ -349,6 +331,7 @@ final class AppStore: ObservableObject {
         }
     }
 
+    // MARK: Drive Disconnected
     private func handleDriveDisconnected(_ serial: String) {
         let mountedNames = FileManager.default
             .mountedVolumeURLs(includingResourceValuesForKeys: nil, options: .skipHiddenVolumes)?
@@ -357,7 +340,6 @@ final class AppStore: ObservableObject {
         for drive in db.fetchAllDrives() where !mountedNames.contains(drive.name) {
             db.markDriveOffline(serial: drive.id)
             seenThisSession.remove(drive.id)
-            // Remove declined drives so they re-prompt next connection
             if declinedDrives.contains(drive.id) {
                 db.deleteDrive(id: drive.id)
                 declinedDrives.remove(drive.id)
@@ -372,7 +354,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Indexing
-
     func indexDrive(_ volumeURL: URL, force: Bool = false) {
         let serial = volumeURL.lastPathComponent
         db.markDriveOnline(serial: serial)
@@ -405,15 +386,11 @@ final class AppStore: ObservableObject {
             await MainActor.run {
                 self.indexingState = IndexingState()
                 self.db.markDriveOnline(serial: serial)
-                // Delay reload to let background DB writes commit
                 self.logAppEvent(.indexComplete, detail: self.db.isDriveFirstIndex(id: serial) ? "\(serial) — Full index complete" : "\(serial) — Incremental index complete")
-                // Check for 500GB+ clients needing workflow
-                self.checkWorkflowPrompts()
+                // self.checkWorkflowPrompts() — disabled
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.reloadImmediate()
                 }
-                // Start FSEvents watcher — but only re-index if NOT currently indexing
-                // and debounce to avoid re-indexing during large file copies
                 Task {
                     await self.indexEngine.startWatching(volumeURL: volumeURL) {
                         Task { @MainActor in
@@ -448,10 +425,7 @@ final class AppStore: ObservableObject {
         }
     }
 
-    // MARK: App Events
-
-    // MARK: - Workflow
-
+    // MARK: Workflow
     func checkWorkflowPrompts() {
         let existingNames = Set(workflows.map { $0.clientName })
         let skipped = Set(
@@ -466,7 +440,7 @@ final class AppStore: ObservableObject {
             DispatchQueue.main.async {
                 self.workflowPromptGroup = group
             }
-            break // one prompt at a time
+            break
         }
     }
 
@@ -489,18 +463,14 @@ final class AppStore: ObservableObject {
     }
 
     func pauseAndReset(completion: @escaping () -> Void) {
-        // Set flags FIRST before anything else
         isResetting = true
         db.isResetting = true
-        // Stop all timers and watchers
         cancellables.removeAll()
         Task { await indexEngine.stopAllWatchers() }
-        // Clear in-memory state
         drives = []
         shoots = []
         workflows = []
         recentActivity = []
-        // Delete on DB queue — completion fires on main when done
         db.resetAllDriveData {
             self.isResetting = false
             self.db.isResetting = false
@@ -509,8 +479,9 @@ final class AppStore: ObservableObject {
         }
     }
 
+    // MARK: App Events
     func logAppEvent(_ kind: AppEventKind, detail: String = "") {
-        db.logAppEvent(kind: kind, detail: detail)
+        db.logAppEvent(kind: kind        , detail: detail)
         appEvents = db.fetchAppEvents()
     }
 
@@ -520,7 +491,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Alerts
-
     func ignoreAlert(_ alert: AppAlert) {
         AlertPreferences.ignore(alert.id)
         reload()
@@ -575,7 +545,6 @@ final class AppStore: ObservableObject {
     }
 
     // MARK: Queries
-
     func shoots(for drive: Drive) -> [Shoot] {
         shoots.filter { $0.driveID == drive.id }
     }
@@ -583,6 +552,5 @@ final class AppStore: ObservableObject {
     func folders(for shoot: Shoot) -> [DriveFolder] {
         db.fetchFolders(for: shoot.id)
     }
-
-
 }
+

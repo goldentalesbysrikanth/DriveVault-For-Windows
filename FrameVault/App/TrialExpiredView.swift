@@ -2,55 +2,52 @@ import SwiftUI
 
 struct TrialExpiredView: View {
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             Spacer()
-
             Image(systemName: "lock.circle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 72))
                 .foregroundStyle(.blue)
-
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Text("Your trial has ended")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 26, weight: .semibold))
                 Text("Thank you for trying Drive Vault.\nPurchase a license to continue using the app.")
                     .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-
-            VStack(spacing: 12) {
+            VStack(spacing: 14) {
                 Button {
-                    // Replace with your actual purchase URL
-                    NSWorkspace.shared.open(URL(string: "https://drivevault.app/buy")!)
+                    if let url = URL(string: "https://drivevault.app/buy") {
+                        NSWorkspace.shared.open(url)
+                    }
                 } label: {
                     Text("Purchase Drive Vault")
                         .font(.system(size: 15, weight: .medium))
-                        .frame(width: 240)
+                        .frame(width: 260)
                         .padding(.vertical, 12)
-                        .background(.blue)
+                        .background(Color.blue)
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
-
                 Button {
-                    NSWorkspace.shared.open(URL(string: "mailto:support@drivevault.app")!)
+                    if let url = URL(string: "mailto:support@drivevault.app") {
+                        NSWorkspace.shared.open(url)
+                    }
                 } label: {
-                    Text("Contact support")
+                    Text("Contact Support")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
-
             Spacer()
-
             Text("Drive Vault v1.0")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.background)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }

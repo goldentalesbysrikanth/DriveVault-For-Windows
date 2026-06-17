@@ -101,7 +101,7 @@ struct DrivesView: View {
 
     private var driveGrid: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                 ForEach(filteredDrives) { drive in
                     DriveCard(
                         drive: drive,

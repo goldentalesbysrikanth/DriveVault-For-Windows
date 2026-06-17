@@ -21,7 +21,7 @@ actor IndexEngine {
     private let batchSize: Int
     private var fsWatchers: [String: DriveWatcher] = [:]
 
-    init(db: DatabaseManager, maxDepth: Int = 3, batchSize: Int = 8) {
+    init(db: DatabaseManager, maxDepth: Int = 3, batchSize: Int = 32) {
         self.db = db
         self.maxDepth = maxDepth
         self.batchSize = batchSize

@@ -3,9 +3,6 @@ import SwiftUI
 // MARK: - PasscodeLockView
 
 /// Full-screen lock view shown on launch and for protected actions.
-/// Mode:
-///   .appLock  — blocks entire app until unlocked
-///   .action   — inline sheet to authenticate a specific action
 struct PasscodeLockView: View {
 
     enum Mode {
@@ -34,79 +31,76 @@ struct PasscodeLockView: View {
 
     var body: some View {
         ZStack {
-            // Background
             Rectangle()
                 .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
 
             VStack(spacing: 28) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(Color.purple.opacity(0.12))
-                        .frame(width: 72, height: 72)
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.purple)
-                }
-
-                // Title
-                Text(title)
-                    .font(.system(size: 18, weight: .semibold))
-
-                // Dot indicators
-                HStack(spacing: 16) {
-                    ForEach(0..<pm.passcodeLength, id: \.self) { i in
-                        Circle()
-                            .fill(i < entered.count ? Color.purple : Color.secondary.opacity(0.3))
-                            .frame(width: 14, height: 14)
-                    }
-                }
-                .modifier(ShakeEffect(shake: shake))
-
-                // Error
+                lockIcon
+                Text(title).font(.system(size: 18, weight: .semibold))
+                dotIndicators
                 if !errorMessage.isEmpty {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                    Text(errorMessage).font(.caption).foregroundStyle(.red)
                 }
-
-                // Number pad
                 numpad
-
-                // Biometrics button
-                if pm.isBiometricsEnabled && pm.biometricsAvailable {
-                    Button {
-                        authenticateWithBiometrics()
-                    } label: {
-                        Label("Use \(pm.biometricType)", systemImage: "faceid")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.purple)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Cancel (action mode only)
-                if showCancel {
-                    Button("Cancel") {
-                        if case .action(_, _, let cancel) = mode { cancel?() }
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .buttonStyle(.plain)
-                }
+                biometricsButton
+                cancelButton
             }
             .padding(40)
             .frame(width: 320)
         }
         .onAppear {
-            if pm.isBiometricsEnabled {
-                authenticateWithBiometrics()
+            if pm.isBiometricsEnabled { authenticateWithBiometrics() }
+        }
+    }
+
+    // MARK: - Components
+
+    private var lockIcon: some View {
+        ZStack {
+            Circle().fill(Color.purple.opacity(0.12)).frame(width: 72, height: 72)
+            Image(systemName: "lock.fill").font(.system(size: 30)).foregroundStyle(.purple)
+        }
+    }
+
+    private var dotIndicators: some View {
+        HStack(spacing: 16) {
+            ForEach(0..<pm.passcodeLength, id: \.self) { i in
+                Circle()
+                    .fill(i < entered.count ? Color.purple : Color.secondary.opacity(0.3))
+                    .frame(width: 14, height: 14)
+            }
+        }
+        .modifier(ShakeEffect(shake: shake))
+    }
+
+    private var biometricsButton: some View {
+        Group {
+            if pm.isBiometricsEnabled && pm.biometricsAvailable {
+                Button { authenticateWithBiometrics() } label: {
+                    Label("Use \(pm.biometricType)", systemImage: "faceid")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.purple)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    // MARK: Number Pad
+    private var cancelButton: some View {
+        Group {
+            if showCancel {
+                Button("Cancel") {
+                    if case .action(_, _, let cancel) = mode { cancel?() }
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Number Pad
 
     private var numpad: some View {
         VStack(spacing: 12) {
@@ -114,7 +108,6 @@ struct PasscodeLockView: View {
                 HStack(spacing: 20) {
                     ForEach(row, id: \.self) { digit in
                         if digit == 0 {
-                            // Delete button on left, 0 in middle, spacer on right
                             Button { deleteDigit() } label: {
                                 Image(systemName: "delete.left")
                                     .font(.system(size: 18))
@@ -122,9 +115,7 @@ struct PasscodeLockView: View {
                                     .frame(width: 64, height: 52)
                             }
                             .buttonStyle(.plain)
-
                             numButton(digit)
-
                             Color.clear.frame(width: 64, height: 52)
                         } else {
                             numButton(digit)
@@ -136,9 +127,7 @@ struct PasscodeLockView: View {
     }
 
     private func numButton(_ digit: Int) -> some View {
-        Button {
-            appendDigit(digit)
-        } label: {
+        Button { appendDigit(digit) } label: {
             Text("\(digit)")
                 .font(.system(size: 22, weight: .medium))
                 .frame(width: 64, height: 52)
@@ -148,16 +137,14 @@ struct PasscodeLockView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Input Handling
+    // MARK: - Input Handling
 
     private func appendDigit(_ digit: Int) {
         guard entered.count < pm.passcodeLength else { return }
         entered.append("\(digit)")
         errorMessage = ""
         if entered.count == pm.passcodeLength {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                verifyPasscode()
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { verifyPasscode() }
         }
     }
 
@@ -173,9 +160,7 @@ struct PasscodeLockView: View {
         } else {
             attempts += 1
             entered = ""
-            errorMessage = attempts >= 3
-                ? "Too many attempts. Try again."
-                : "Incorrect passcode"
+            errorMessage = attempts >= 3 ? "Too many attempts. Try again." : "Incorrect passcode"
             withAnimation(.default) { shake = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { shake = false }
         }
@@ -199,7 +184,6 @@ struct PasscodeLockView: View {
 
 // MARK: - PasscodeSetupView
 
-/// Used for initial setup and changing the passcode.
 struct PasscodeSetupView: View {
 
     enum SetupMode { case create, change, disable }
@@ -220,20 +204,13 @@ struct PasscodeSetupView: View {
 
     var body: some View {
         VStack(spacing: 28) {
-            // Icon
             ZStack {
-                Circle()
-                    .fill(Color.purple.opacity(0.12))
-                    .frame(width: 72, height: 72)
-                Image(systemName: stepIcon)
-                    .font(.system(size: 30))
-                    .foregroundStyle(.purple)
+                Circle().fill(Color.purple.opacity(0.12)).frame(width: 72, height: 72)
+                Image(systemName: stepIcon).font(.system(size: 30)).foregroundStyle(.purple)
             }
 
-            Text(stepTitle)
-                .font(.system(size: 18, weight: .semibold))
+            Text(stepTitle).font(.system(size: 18, weight: .semibold))
 
-            // Length picker (only on first new entry step)
             if step == .enterNew && mode != .disable {
                 Picker("Length", selection: $selectedLength) {
                     Text("4-digit").tag(4)
@@ -244,13 +221,13 @@ struct PasscodeSetupView: View {
                 .onChange(of: selectedLength) { _, _ in first = "" }
             }
 
-            // Dots
             let length = mode == .disable ? pm.passcodeLength : selectedLength
-            let current_entry = step == .verifyOld ? current : (step == .enterNew ? first : second)
+            let currentEntry = step == .verifyOld ? current : (step == .enterNew ? first : second)
+
             HStack(spacing: 16) {
                 ForEach(0..<length, id: \.self) { i in
                     Circle()
-                        .fill(i < current_entry.count ? Color.purple : Color.secondary.opacity(0.3))
+                        .fill(i < currentEntry.count ? Color.purple : Color.secondary.opacity(0.3))
                         .frame(width: 14, height: 14)
                 }
             }
@@ -260,8 +237,7 @@ struct PasscodeSetupView: View {
                 Text(errorMessage).font(.caption).foregroundStyle(.red)
             }
 
-            // Numpad
-            setupNumpad(length: length, entry: current_entry)
+            setupNumpad(length: length, entry: currentEntry)
 
             Button("Cancel", action: onDone)
                 .font(.system(size: 13))
@@ -277,7 +253,7 @@ struct PasscodeSetupView: View {
 
     private var stepTitle: String {
         switch step {
-        case .verifyOld:  return mode == .disable ? "Enter current passcode" : "Enter current passcode"
+        case .verifyOld:  return "Enter current passcode"
         case .enterNew:   return mode == .disable ? "Enter passcode to disable" : "Create a passcode"
         case .confirmNew: return "Confirm passcode"
         }
@@ -316,9 +292,7 @@ struct PasscodeSetupView: View {
     }
 
     private func setupNumButton(_ digit: Int, length: Int) -> some View {
-        Button {
-            appendSetup(digit, length: length)
-        } label: {
+        Button { appendSetup(digit, length: length) } label: {
             Text("\(digit)")
                 .font(.system(size: 22, weight: .medium))
                 .frame(width: 64, height: 52)
@@ -408,7 +382,6 @@ struct PasscodeSetupView: View {
 
 // MARK: - PasscodeGate
 
-/// Wraps any view — if passcode is enabled, shows auth sheet before revealing content.
 struct PasscodeGate<Content: View>: View {
     let actionTitle: String
     @ViewBuilder let content: Content
@@ -423,11 +396,9 @@ struct PasscodeGate<Content: View>: View {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 40))
                         .foregroundStyle(.purple)
-                    Text("This area is protected")
-                        .font(.headline)
+                    Text("This area is protected").font(.headline)
                     Text("Authenticate to access \(actionTitle)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(.secondary)
                     Button("Authenticate") { showAuth = true }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
