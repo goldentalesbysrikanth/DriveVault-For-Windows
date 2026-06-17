@@ -57,6 +57,8 @@
 
 	<Capabilities>
 		<rescap:Capability Name="runFullTrust" />
+		<!-- ✅ ADDED — allows FileSystemWatcher and file access on external drives -->
+		<rescap:Capability Name="broadFileSystemAccess" />
 		<systemai:Capability Name="systemAIModels"/>
 		<uap:Capability Name="removableStorage"/>
 		<Capability Name="privateNetworkClientServer"/>

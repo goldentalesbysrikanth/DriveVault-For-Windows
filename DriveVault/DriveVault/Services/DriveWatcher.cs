@@ -24,8 +24,6 @@ namespace DriveVault.Services
         private HashSet<string> _removedThisSession = new();
         private HashSet<string> _skippedDrives = new();
         private HashSet<string> _indexingDrives = new();
-
-        // ✅ Deep scan — currently scanning drives track చేయాలి
         private HashSet<string> _deepScanningDrives = new();
 
         public void Start()
@@ -39,14 +37,12 @@ namespace DriveVault.Services
                 _initialScanDone = true;
             });
 
-            // ✅ Every 5 seconds — drive connect/disconnect scan
             _scanTimer = new Timer(
                 _ => { if (_initialScanDone) Task.Run(() => ScanConnectedDrives()); },
                 null,
                 TimeSpan.FromSeconds(5),
                 TimeSpan.FromSeconds(5));
 
-            // ✅ Every 30 seconds — deep scan for file changes
             _deepScanTimer = new Timer(
                 _ => { if (_initialScanDone) Task.Run(() => DeepScanConnectedDrives()); },
                 null,
@@ -74,7 +70,6 @@ namespace DriveVault.Services
             _skippedDrives.Add(mountPath);
         }
 
-        // ✅ Deep scan — every 30 seconds, all connected drives
         private void DeepScanConnectedDrives()
         {
             try
@@ -85,7 +80,6 @@ namespace DriveVault.Services
 
                 foreach (var drive in drives)
                 {
-                    // Already indexing — skip
                     if (_indexingDrives.Contains(drive.MountPath)) continue;
                     if (_deepScanningDrives.Contains(drive.MountPath)) continue;
 
@@ -187,9 +181,7 @@ namespace DriveVault.Services
                         if (excluded.Contains(label.ToLower())) continue;
 
                         var existing = existingDrives.FirstOrDefault(
-    d => d.MountPath == mountPath);
-
-                        
+                            d => d.MountPath == mountPath);
 
                         if (_skippedDrives.Contains(mountPath) && existing != null)
                         {
@@ -246,7 +238,6 @@ namespace DriveVault.Services
                             }
                             else if (autoIndex && drive.IsFullyIndexed)
                             {
-                                // ✅ Already indexed — immediate incremental scan
                                 Task.Run(() =>
                                 {
                                     bool changes = IndexDriveIncremental(drive);
@@ -318,7 +309,6 @@ namespace DriveVault.Services
         {
             try
             {
-                // ✅ Debug
                 System.Diagnostics.Debug.WriteLine($"IndexDriveFull called: {drive.Label} — Connected: {drive.IsConnected} — MountPath: {drive.MountPath}");
                 var oldFolders = DatabaseHelper.GetFoldersByDrive(drive.Id);
                 foreach (var old in oldFolders)
@@ -389,7 +379,7 @@ namespace DriveVault.Services
             catch { }
         }
 
-        // ✅ Subfolders recursively index (max depth: 3)
+        // ✅ Used only during full index — always creates new records
         private void IndexSubFolders(Drive drive, string parentPath, int depth)
         {
             if (depth > 3) return;
@@ -435,6 +425,69 @@ namespace DriveVault.Services
             catch { }
         }
 
+        // ✅ Used during incremental — checks existing DB before saving
+        // Avoids duplicate GUID inserts that caused ArgumentException
+        private void SyncSubFolders(Drive drive, string parentPath,
+            Dictionary<string, DriveFolder> existingPaths,
+            ref bool hasChanges, int depth = 1)
+        {
+            if (depth > 3) return;
+
+            try
+            {
+                var subDirs = Directory.GetDirectories(parentPath)
+                    .Where(f =>
+                    {
+                        var name = Path.GetFileName(f);
+                        return !name.StartsWith("$") &&
+                               !name.StartsWith(".");
+                    }).ToArray();
+
+                foreach (var subPath in subDirs)
+                {
+                    try
+                    {
+                        if (!existingPaths.ContainsKey(subPath))
+                        {
+                            // ✅ New subfolder — safe to create new record
+                            var subFiles = new DirectoryInfo(subPath)
+                                .EnumerateFiles("*", SearchOption.AllDirectories)
+                                .ToList();
+
+                            var subFolder = new DriveFolder
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                DriveId = drive.Id,
+                                FolderName = Path.GetFileName(subPath),
+                                FolderPath = subPath,
+                                SizeBytes = subFiles.Sum(f => f.Length),
+                                FileCount = subFiles.Count,
+                                FileTypeSummary = GetFileTypeSummary(subFiles),
+                                FirstSeen = Directory.GetCreationTime(subPath),
+                                LastSeen = DateTime.Now,
+                                IsTopLevel = false
+                            };
+                            DatabaseHelper.SaveFolder(subFolder);
+                            DatabaseHelper.LogActivity(
+                                "folder_added", drive.Id,
+                                subFolder.Id, subFolder.FolderName, drive.Label,
+                                subFolder.FileTypeSummary,
+                                subFolder.FileCount,
+                                subFolder.SizeBytes);
+                            existingPaths[subPath] = subFolder;
+                            hasChanges = true;
+                        }
+
+                        // Recurse deeper to catch sub-subfolders
+                        SyncSubFolders(drive, subPath,
+                            existingPaths, ref hasChanges, depth + 1);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         // ─── Incremental Index ────────────────────────────────────
         public bool IndexDriveIncremental(Drive drive)
         {
@@ -469,6 +522,7 @@ namespace DriveVault.Services
 
                         if (!existingPaths.ContainsKey(folderPath))
                         {
+                            // Brand new top-level folder
                             var folder = new DriveFolder
                             {
                                 Id = Guid.NewGuid().ToString(),
@@ -489,6 +543,9 @@ namespace DriveVault.Services
                                 folder.FileTypeSummary,
                                 folder.FileCount,
                                 folder.SizeBytes);
+                            existingPaths[folderPath] = folder;
+                            // Index its subfolders (safe — folder is brand new)
+                            IndexSubFolders(drive, folderPath, 1);
                             hasChanges = true;
                         }
                         else
@@ -516,6 +573,11 @@ namespace DriveVault.Services
                                     newSize);
                                 hasChanges = true;
                             }
+
+                            // ✅ CHANGE — use SyncSubFolders (checks DB first)
+                            // NOT IndexSubFolders (always creates new records)
+                            SyncSubFolders(drive, folderPath,
+                                existingPaths, ref hasChanges);
                         }
                     }
                     catch { }
