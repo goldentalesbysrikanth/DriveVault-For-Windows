@@ -6,6 +6,8 @@
     Title="Drive Vault">
 
     <Grid x:Name="RootGrid">
+
+        <!-- ── Existing app UI — unchanged ────────────────────── -->
         <NavigationView
             x:Name="NavView"
             PaneDisplayMode="Left"
@@ -64,5 +66,25 @@
                 <Frame Grid.Row="1" x:Name="ContentFrame"/>
             </Grid>
         </NavigationView>
+
+        <!-- ✅ NEW — Splash overlay, sits on top of everything -->
+        <!-- Covers the entire window with dark background + logo -->
+        <!-- Fades out after 2 seconds then collapses to nothing -->
+        <Grid x:Name="SplashOverlay"
+              Background="#0D1117"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch">
+            <Image Source="ms-appx:///Images/DriveVault_HighRes.png"
+                   Width="320"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   RenderTransformOrigin="0.5,0.5">
+                <Image.RenderTransform>
+                    <ScaleTransform x:Name="SplashScale"
+                                    ScaleX="0.9" ScaleY="0.9"/>
+                </Image.RenderTransform>
+            </Image>
+        </Grid>
+
     </Grid>
 </Window>

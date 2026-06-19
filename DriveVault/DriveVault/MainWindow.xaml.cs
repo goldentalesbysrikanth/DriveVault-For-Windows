@@ -3,6 +3,7 @@ using DriveVault.Services;
 using DriveVault.Views;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -101,6 +102,90 @@ namespace DriveVault
 
             _driveWatcher.Start();
             CheckTrial();
+            ApplyTheme();
+
+            // ✅ NEW — start splash overlay animation
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                await ShowSplashAsync();
+            });
+        }
+
+        // ✅ NEW — animates the splash overlay then hides it
+        // Plain language: logo fades in on top of the app,
+        // holds for 2 seconds, then fades out revealing the real UI
+        private async Task ShowSplashAsync()
+        {
+            try
+            {
+                // Small delay to ensure window is fully rendered
+                await Task.Delay(100);
+
+                // ── Fade in logo (0.6s) ───────────────────────────
+                var fadeIn = new Storyboard();
+
+                var overlayFadeIn = new DoubleAnimation
+                {
+                    From = 1,
+                    To = 1,
+                    Duration = new Duration(TimeSpan.FromSeconds(0.1))
+                };
+                Storyboard.SetTarget(overlayFadeIn, SplashOverlay);
+                Storyboard.SetTargetProperty(overlayFadeIn, "Opacity");
+
+                var scaleXIn = new DoubleAnimation
+                {
+                    From = 0.9,
+                    To = 1.0,
+                    Duration = new Duration(TimeSpan.FromSeconds(0.7)),
+                    EasingFunction = new CubicEase
+                    { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(scaleXIn, SplashScale);
+                Storyboard.SetTargetProperty(scaleXIn, "ScaleX");
+
+                var scaleYIn = new DoubleAnimation
+                {
+                    From = 0.9,
+                    To = 1.0,
+                    Duration = new Duration(TimeSpan.FromSeconds(0.7)),
+                    EasingFunction = new CubicEase
+                    { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(scaleYIn, SplashScale);
+                Storyboard.SetTargetProperty(scaleYIn, "ScaleY");
+
+                fadeIn.Children.Add(overlayFadeIn);
+                fadeIn.Children.Add(scaleXIn);
+                fadeIn.Children.Add(scaleYIn);
+                fadeIn.Begin();
+
+                // Hold
+                await Task.Delay(2500);
+
+                // ── Fade out overlay (0.6s) ───────────────────────
+                var fadeOut = new Storyboard();
+
+                var overlayFadeOut = new DoubleAnimation
+                {
+                    From = 1,
+                    To = 0,
+                    Duration = new Duration(TimeSpan.FromSeconds(0.6)),
+                    EasingFunction = new CubicEase
+                    { EasingMode = EasingMode.EaseIn }
+                };
+                Storyboard.SetTarget(overlayFadeOut, SplashOverlay);
+                Storyboard.SetTargetProperty(overlayFadeOut, "Opacity");
+
+                fadeOut.Children.Add(overlayFadeOut);
+                fadeOut.Begin();
+
+                await Task.Delay(650);
+
+                // Collapse overlay so it doesn't block UI interaction
+                SplashOverlay.Visibility = Visibility.Collapsed;
+            }
+            catch { }
         }
 
         private async Task RunIndexSafe(Data.Drive drive)
@@ -240,7 +325,6 @@ namespace DriveVault
             }
         }
 
-        // ─── Global Search ────────────────────────────────────────
         private void SearchBox_TextChanged(AutoSuggestBox sender,
             AutoSuggestBoxTextChangedEventArgs args)
         {
@@ -268,7 +352,6 @@ namespace DriveVault
                     .Select(g => g.First())
                     .ToList();
 
-                // ── Drives ────────────────────────────────────────
                 foreach (var d in drives
                     .Where(d => d.Label.ToLower().Contains(query) ||
                                 d.MountPath.ToLower().Contains(query)))
@@ -280,7 +363,6 @@ namespace DriveVault
                         Icon = "🖴"
                     });
 
-                // ── Library folders ───────────────────────────────
                 foreach (var f in allFolders
                     .Where(f => f.FolderName.ToLower().Contains(query))
                     .Take(5))
@@ -301,7 +383,6 @@ namespace DriveVault
                     });
                 }
 
-                // ── Clients ───────────────────────────────────────
                 foreach (var g in allFolders
                     .Where(f => f.FolderName.ToLower().Contains(query))
                     .GroupBy(f => f.FolderName)
@@ -320,7 +401,6 @@ namespace DriveVault
                     {
                         Title = f.FolderName,
                         Subtitle = $"Client · {location} · {FormatSize(total)}",
-                        // ✅ CHANGE 1 — store FolderName not Id
                         Tag = "client:name:" + f.FolderName,
                         Icon = "👤"
                     });
@@ -331,7 +411,6 @@ namespace DriveVault
             catch { sender.ItemsSource = null; }
         }
 
-        // ─── Search suggestion chosen ─────────────────────────────
         private async void SearchBox_SuggestionChosen(AutoSuggestBox sender,
             AutoSuggestBoxSuggestionChosenEventArgs args)
         {
@@ -365,8 +444,6 @@ namespace DriveVault
                     if (ContentFrame.Content is FoldersPage fp)
                         fp.LoadData(folderId);
                 }
-                // ✅ CHANGE 2 — match new tag, use NavigationCompleted
-                // + LoadDataByName for guaranteed highlight
                 else if (result.Tag.StartsWith("client:name:"))
                 {
                     var folderName = result.Tag.Replace("client:name:", "");
@@ -374,7 +451,6 @@ namespace DriveVault
                     _isSearchNavigating = true;
                     NavigateToTab("clients");
 
-                    // Wait for actual navigation to complete
                     var tcs = new TaskCompletionSource<bool>();
                     void OnNavigated(object s,
                         Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
@@ -386,7 +462,6 @@ namespace DriveVault
                     ContentFrame.Navigate(typeof(ClientsPage));
                     _isSearchNavigating = false;
 
-                    // Wait for page load (max 2s safety timeout)
                     await Task.WhenAny(tcs.Task, Task.Delay(2000));
 
                     if (ContentFrame.Content is ClientsPage cp)
@@ -425,9 +500,17 @@ namespace DriveVault
             catch { }
         }
 
-        // Returns immediate parent folder name from path
-        // e.g. "E:\Sushmitha & Raj\Drone" + "E:\" → "Sushmitha & Raj"
-        // e.g. "E:\ROJA+DEHRAJ"           + "E:\" → "" (top-level)
+        public void ApplyTheme()
+        {
+            var theme = DatabaseHelper.GetSetting("app_theme", "system");
+            RootGrid.RequestedTheme = theme switch
+            {
+                "light" => ElementTheme.Light,
+                "dark" => ElementTheme.Dark,
+                _ => ElementTheme.Default
+            };
+        }
+
         private static string GetParentFolderName(
             string folderPath, string mountPath)
         {
